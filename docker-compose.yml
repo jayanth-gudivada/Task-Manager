@@ -1,0 +1,11 @@
+services:
+  hrms:
+    build: .
+    image: hrms:v1
+    container_name: hrms_app
+    ports:
+      - "3003:5001"
+    env_file:
+      - ./backend/.env
+    environment:
+      - PORT=5001

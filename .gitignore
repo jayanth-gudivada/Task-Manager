@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Production
+frontend/dist/
+
+# Security
+.env
+backend/.env
+
+# Logs & System
+*.log
+.DS_Store
+
+# Tooling config (local only)
+.impeccable.md
+
+# Obsolete two-container setup (replaced by root Dockerfile)
+frontend/Dockerfile
+backend/Dockerfile
+frontend/.dockerignore
+backend/.dockerignore
+frontend/nginx.conf
+
+# Unintegrated "Enhanced" UI experiment + its guides (kept locally, not shipped)
+frontend/src/AppEnhanced.jsx
+frontend/src/components/*Enhanced.jsx
+frontend/src/theme/
+frontend/src/utils/accessibility.js
+frontend/ENHANCED_COMPONENTS_GUIDE.md
+frontend/INTEGRATION_STEPS.md
+frontend/POLISHED_INTEGRATION_GUIDE.md
+frontend/POLISH_SUMMARY.md
+frontend/QUICK_START.md
+frontend/README.md
+
+# Unused assets
+frontend/src/assets/hero.png
+frontend/src/assets/react.svg
+frontend/src/assets/vite.svg
