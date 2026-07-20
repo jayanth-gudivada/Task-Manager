@@ -1,6 +1,7 @@
-// Account settings: user-chosen colors for the fixed task tiers
-// (priority / important). Stored as a single document in the `settings`
-// collection. Project-base defaults act as the fallback when unset.
+// Per-user account settings: each user's chosen colors for the fixed task tiers
+// (priority / important). Stored as one document per user in the `settings`
+// collection, keyed by ownerId. Project-base defaults act as the fallback when
+// unset. All access is scoped to req.userId (set by requireAuth).
 
 const DEFAULTS = {
   priorityColor: '#ef4444',  // Red
@@ -9,11 +10,11 @@ const DEFAULTS = {
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
-// Read tier colors, falling back to project-base defaults for anything missing.
+// Read this user's tier colors, falling back to project-base defaults.
 exports.getSettings = async (req, res) => {
   const db = req.app.locals.db;
   try {
-    const doc = await db.collection('settings').findOne({ key: 'tierColors' });
+    const doc = await db.collection('settings').findOne({ ownerId: req.userId });
     res.status(200).json({
       priorityColor: doc?.priorityColor || DEFAULTS.priorityColor,
       importantColor: doc?.importantColor || DEFAULTS.importantColor,
@@ -23,7 +24,7 @@ exports.getSettings = async (req, res) => {
   }
 };
 
-// Upsert tier colors after validating they are proper hex values.
+// Upsert this user's tier colors after validating they are proper hex values.
 exports.updateSettings = async (req, res) => {
   const db = req.app.locals.db;
   try {
@@ -37,8 +38,8 @@ exports.updateSettings = async (req, res) => {
     }
 
     await db.collection('settings').updateOne(
-      { key: 'tierColors' },
-      { $set: { key: 'tierColors', priorityColor, importantColor, updatedAt: new Date() } },
+      { ownerId: req.userId },
+      { $set: { ownerId: req.userId, priorityColor, importantColor, updatedAt: new Date() } },
       { upsert: true }
     );
 

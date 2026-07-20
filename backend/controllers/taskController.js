@@ -1,10 +1,14 @@
 const { ObjectId } = require('mongodb');
 
+// Every query in this file is scoped to req.userId (set by requireAuth) so a
+// user can only ever see or touch their own tasks.
+
 // Create a new task
 exports.createTask = async (req, res) => {
   const db = req.app.locals.db;
   try {
     const task = {
+      ownerId: req.userId,
       title: req.body.title,
       description: req.body.description,
       startDate: req.body.startDate,
@@ -25,7 +29,10 @@ exports.createTask = async (req, res) => {
 exports.getAllTasks = async (req, res) => {
   const db = req.app.locals.db;
   try {
-    const tasks = await db.collection('tasks').find({ status: 1 }).sort({ startDate: 1 }).toArray();
+    const tasks = await db.collection('tasks')
+      .find({ ownerId: req.userId, status: 1 })
+      .sort({ startDate: 1 })
+      .toArray();
     res.status(200).json(tasks);
   } catch (error) {
     res.status(500).json({ message: 'Error retrieving tasks', error: error.message });
@@ -40,9 +47,10 @@ exports.getUpcomingTasks = async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     const tasks = await db.collection('tasks')
-      .find({ 
+      .find({
+        ownerId: req.userId,
         status: 1,
-        endDate: { $gte: today.toISOString() } 
+        endDate: { $gte: today.toISOString() }
       })
       .sort({ endDate: 1 })
       .limit(10)
@@ -58,21 +66,22 @@ exports.updateTask = async (req, res) => {
   const db = req.app.locals.db;
   try {
     const { id } = req.params;
-    const { _id, ...updateFields } = req.body;
-    
+    // Never let a client reassign ownership or _id via the body.
+    const { _id, ownerId, ...updateFields } = req.body;
+
     // Set completedAt if status is changing to 0
     if (updateFields.status === 0) {
       updateFields.completedAt = new Date().toISOString();
     }
 
     const result = await db.collection('tasks').findOneAndUpdate(
-      { _id: new ObjectId(id) },
+      { _id: new ObjectId(id), ownerId: req.userId },
       { $set: updateFields },
       { returnDocument: 'after' }
     );
-    
-    !result 
-      ? res.status(404).json({ message: 'Task not found' }) 
+
+    !result
+      ? res.status(404).json({ message: 'Task not found' })
       : res.status(200).json(result);
   } catch (error) {
     res.status(400).json({ message: 'Error updating task', error: error.message });
@@ -84,10 +93,13 @@ exports.deleteTask = async (req, res) => {
   const db = req.app.locals.db;
   try {
     const { id } = req.params;
-    const result = await db.collection('tasks').deleteOne({ _id: new ObjectId(id) });
-    
-    result?.deletedCount === 0 
-      ? res.status(404).json({ message: 'Task not found' }) 
+    const result = await db.collection('tasks').deleteOne({
+      _id: new ObjectId(id),
+      ownerId: req.userId,
+    });
+
+    result?.deletedCount === 0
+      ? res.status(404).json({ message: 'Task not found' })
       : res.status(200).json({ message: 'Task deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting task', error: error.message });
@@ -104,8 +116,9 @@ exports.getCompletedTasks = async (req, res) => {
     const limit = isAll ? 0 : (parseInt(limitParam) || 5);
     const skip = isAll ? 0 : (page - 1) * limit;
 
-    const total = await db.collection('tasks').countDocuments({ status: 0 });
-    let query = db.collection('tasks').find({ status: 0 }).sort({ completedAt: -1 });
+    const filter = { ownerId: req.userId, status: 0 };
+    const total = await db.collection('tasks').countDocuments(filter);
+    let query = db.collection('tasks').find(filter).sort({ completedAt: -1 });
 
     if (!isAll) {
       query = query.skip(skip).limit(limit);
@@ -127,13 +140,16 @@ exports.getCompletedTasks = async (req, res) => {
 exports.getPerformanceStats = async (req, res) => {
   const db = req.app.locals.db;
   try {
-    const completedTasks = await db.collection('tasks').find({ status: 0 }).toArray();
-    
+    const completedTasks = await db.collection('tasks')
+      .find({ ownerId: req.userId, status: 0 })
+      .toArray();
+
     if (completedTasks.length === 0) {
       return res.status(200).json({
         completionRate: 0,
         avgResponseTime: 0,
-        totalCompleted: 0
+        totalCompleted: 0,
+        totalActive: await db.collection('tasks').countDocuments({ ownerId: req.userId, status: 1 })
       });
     }
 
@@ -155,7 +171,7 @@ exports.getPerformanceStats = async (req, res) => {
 
     const avgResponseTime = responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
 
-    const totalActive = await db.collection('tasks').countDocuments({ status: 1 });
+    const totalActive = await db.collection('tasks').countDocuments({ ownerId: req.userId, status: 1 });
 
     res.status(200).json({
       completionRate: Math.round(completionRate),

@@ -5,6 +5,46 @@ import axios from 'axios';
 // so VITE_API_URL is set to the relative path "/api".
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
+const TOKEN_KEY = 'tm_token';
+
+// Attach the JWT to every outgoing request so protected routes accept it.
+axios.interceptors.request.use((config) => {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// On any 401 the session is dead: clear it and bounce to login. A tiny custom
+// event lets the app react without this module importing the store (avoids a
+// circular dependency between api.js and the slices).
+axios.interceptors.response.use(
+  (res) => res,
+  (error) => {
+    if (error.response?.status === 401 && localStorage.getItem(TOKEN_KEY)) {
+      localStorage.removeItem(TOKEN_KEY);
+      window.dispatchEvent(new Event('auth:expired'));
+    }
+    return Promise.reject(error);
+  }
+);
+
+export const authService = {
+  register: async (data) => {
+    const response = await axios.post(`${API_URL}/auth/register`, data);
+    return response.data; // { token, user }
+  },
+  login: async (creds) => {
+    const response = await axios.post(`${API_URL}/auth/login`, creds);
+    return response.data; // { token, user }
+  },
+  me: async () => {
+    const response = await axios.get(`${API_URL}/auth/me`);
+    return response.data; // { user }
+  },
+};
+
 export const taskService = {
   // Get all tasks
   getAllTasks: async () => {
@@ -50,3 +90,18 @@ export const settingsService = {
     return response.data;
   }
 };
+
+// Admin-only user management.
+export const userService = {
+  listUsers: async () => {
+    const response = await axios.get(`${API_URL}/users`);
+    return response.data;
+  },
+  updateUser: async (id, changes) => {
+    const response = await axios.put(`${API_URL}/users/${id}`, changes);
+    return response.data;
+  }
+};
+
+// The role values the UI offers; keep in sync with backend roles.js.
+export const ROLES = ['admin', 'leader', 'user'];

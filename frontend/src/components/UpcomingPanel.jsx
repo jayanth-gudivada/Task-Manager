@@ -77,29 +77,7 @@ const UpcomingPanel = ({ tasks = [], loading }) => {
       width: '100%', 
       minWidth: 0, 
       overflow: 'hidden' 
-    }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 1 }}>
-        <Typography variant="h6" sx={{ fontWeight: 800, color: '#1e293b' }}>
-          Up Next
-        </Typography>
-        <Box sx={{ 
-          px: 1, 
-          py: 0.4, 
-          bgcolor: '#f5f0ff', 
-          borderRadius: '6px',
-          border: '1px solid #e9d5ff'
-        }}>
-          <Typography sx={{ 
-            fontWeight: 700, 
-            fontSize: '0.6rem', 
-            color: '#8529d8', 
-            letterSpacing: '0.05em'
-          }}>
-            URGENT FOCUS
-          </Typography>
-        </Box>
-      </Box>
-      
+    }}>      
       {loading ? (
         <Box sx={{
           flexGrow: 1,

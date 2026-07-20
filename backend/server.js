@@ -6,6 +6,11 @@ const fs = require('fs');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const taskRoutes = require('./routes/taskRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes');
+const requireAuth = require('./middleware/requireAuth');
+const requireAdmin = require('./middleware/requireAdmin');
+const runStartup = require('./startup');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -48,9 +53,23 @@ async function run() {
     // Make db available to routes
     app.locals.db = db;
 
-    // Routes
-    app.use('/api/tasks', taskRoutes);
-    app.use('/api/settings', settingsRoutes);
+    // One-time startup: unique-email index, admin seed, legacy data wipe.
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET IS MISSING — auth will fail. Set it in the environment.");
+    }
+    await runStartup(db);
+
+    // Public auth routes (register/login are open; /me is self-guarded).
+    app.use('/api/auth', authRoutes);
+
+    // Protected routes — every request must carry a valid token, and each
+    // controller scopes its queries to req.userId so users never see each
+    // other's data.
+    app.use('/api/tasks', requireAuth, taskRoutes);
+    app.use('/api/settings', requireAuth, settingsRoutes);
+
+    // Admin-only: user management (list users, edit info/role).
+    app.use('/api/users', requireAuth, requireAdmin, userRoutes);
 
     // Basic health API
     app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok', message: 'Backend is running and accessible!' }));

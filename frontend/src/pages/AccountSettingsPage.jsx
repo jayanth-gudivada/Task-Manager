@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Paper, Typography, Button, Snackbar, Alert } from '@mui/material';
 import { HexColorPicker, HexColorInput } from 'react-colorful';
-import { useTasks } from '../context/TaskContext';
+import { useDispatch, useSelector } from 'react-redux';
+import { selectTierColors, updateSettings } from '../store/settingsSlice';
 import {
   DEFAULT_PRIORITY_COLOR,
   DEFAULT_IMPORTANT_COLOR,
@@ -53,7 +54,8 @@ const ColorField = ({ label, hint, value, onChange }) => (
 );
 
 const AccountSettingsPage = () => {
-  const { tierColors, updateTierColors } = useTasks();
+  const dispatch = useDispatch();
+  const tierColors = useSelector(selectTierColors);
 
   const [priorityColor, setPriorityColor] = useState(tierColors.priorityColor);
   const [importantColor, setImportantColor] = useState(tierColors.importantColor);
@@ -85,10 +87,11 @@ const AccountSettingsPage = () => {
     if (validationError) return;
     setSaving(true);
     try {
-      await updateTierColors({ priorityColor, importantColor });
+      // unwrap() surfaces the thunk's rejectWithValue message as a throw.
+      await dispatch(updateSettings({ priorityColor, importantColor })).unwrap();
       setToast({ severity: 'success', message: 'Colors saved.' });
     } catch (err) {
-      setToast({ severity: 'error', message: err?.response?.data?.message || 'Failed to save colors.' });
+      setToast({ severity: 'error', message: typeof err === 'string' ? err : 'Failed to save colors.' });
     } finally {
       setSaving(false);
     }
