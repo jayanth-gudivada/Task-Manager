@@ -7,6 +7,10 @@ import {
 } from 'date-fns';
 import { getTaskColor } from '../utils/TaskColors';
 
+// Task importance ordering: priority > important > general.
+const priorityRank = (priority) =>
+  priority === 'priority' ? 2 : priority === 'important' ? 1 : 0;
+
 const CalendarGrid = ({ currentDate, tasks = [] }) => {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
@@ -24,14 +28,16 @@ const CalendarGrid = ({ currentDate, tasks = [] }) => {
   // A task shows a dot on every day of its startDate–endDate range;
   // tasks without a startDate (or with startDate after endDate) dot only the endDate.
   const getTasksForDay = (day) =>
-    tasks?.filter(task => {
+    (tasks?.filter(task => {
       if (task?.status !== 1 || !task?.endDate) return false;
       const end = startOfDay(parseISO(task.endDate));
       if (!task?.startDate) return isSameDay(day, end);
       const start = startOfDay(parseISO(task.startDate));
       if (start > end) return isSameDay(day, end);
       return isWithinInterval(day, { start, end });
-    }) || [];
+    }) || [])
+      // Higher-importance tasks first so they survive the 2-dot cap and stay visible.
+      .sort((a, b) => priorityRank(b?.priority) - priorityRank(a?.priority));
 
   // Helper functions removed in favor of shared utility
 
@@ -113,11 +119,11 @@ const CalendarGrid = ({ currentDate, tasks = [] }) => {
                 maxWidth: '100%',
                 mt: 0.5
               }}>
-                {dayTasks.map((task) => (
-                  <Tooltip 
-                    key={task._id} 
-                    title={task.title} 
-                    arrow 
+                {dayTasks.slice(0, 2).map((task) => (
+                  <Tooltip
+                    key={task._id}
+                    title={task.title}
+                    arrow
                     placement="top"
                   >
                     <Box
@@ -129,7 +135,7 @@ const CalendarGrid = ({ currentDate, tasks = [] }) => {
                         width: 5,
                         height: 5,
                         borderRadius: '50%',
-                        bgcolor: getTaskColor(task.title, task.priority),
+                        bgcolor: getTaskColor(task.title, task.priority, task.color),
                         cursor: 'pointer',
                         transition: 'transform 0.2s',
                         '&:hover': {
@@ -139,6 +145,25 @@ const CalendarGrid = ({ currentDate, tasks = [] }) => {
                     />
                   </Tooltip>
                 ))}
+                {dayTasks.length > 2 && (
+                  <Tooltip
+                    title={dayTasks.slice(2).map(t => t.title).join(', ')}
+                    arrow
+                    placement="top"
+                  >
+                    <Typography
+                      sx={{
+                        fontSize: '0.55rem',
+                        fontWeight: 700,
+                        lineHeight: '5px',
+                        color: '#64748b',
+                        cursor: 'default',
+                      }}
+                    >
+                      +{dayTasks.length - 2}
+                    </Typography>
+                  </Tooltip>
+                )}
               </Box>
             </Box>
           );

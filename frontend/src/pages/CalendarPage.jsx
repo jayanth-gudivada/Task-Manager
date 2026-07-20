@@ -69,7 +69,7 @@ const CalendarPage = () => {
     }}>
       <Grid container spacing={2} sx={{ height: { xs: 'auto', md: '100%' }, width: '100%' }}>
         {/* Main Calendar Section */}
-        <Grid size={{ xs: 12, md: 7.5 }} sx={{ height: { xs: 'auto', md: '100%' }, display: 'flex', minWidth: 0 }}>
+        <Grid size={{ xs: 12, md: 5 }} sx={{ height: { xs: 'auto', md: '100%' }, display: 'flex', minWidth: 0 }}>
           <Paper sx={{
             p: { xs: 2, md: 3 },
             display: 'flex',
@@ -111,7 +111,7 @@ const CalendarPage = () => {
         </Grid>
  
         {/* Sidebar Section */}
-        <Grid size={{ xs: 12, md: 4.5 }} sx={{ height: { xs: 'auto', md: '100%' }, display: 'flex', minWidth: 0 }}>
+        <Grid size={{ xs: 12, md: 7 }} sx={{ height: { xs: 'auto', md: '100%' }, display: 'flex', minWidth: 0 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: { xs: '300px', md: 'auto' } }}>
             <UpcomingPanel tasks={tasks} loading={loading} />
           </Box>

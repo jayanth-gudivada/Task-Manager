@@ -13,12 +13,15 @@ import {
   Select,
   FormControl,
   InputLabel,
-  IconButton
+  IconButton,
+  Popover
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import ReactDatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { format, isBefore, startOfDay, parseISO } from 'date-fns';
+import { HexColorPicker, HexColorInput } from 'react-colorful';
+import { GENERAL_DEFAULT, isColorReserved, getPriorityColor, getImportantColor } from '../utils/TaskColors';
 
 const TaskDialog = ({ open, onClose, onSave, onDelete, task, viewOnly = false }) => {
   const [taskName, setTaskName] = useState('');
@@ -26,6 +29,9 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, viewOnly = false })
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date());
   const [priority, setPriority] = useState('general');
+  const [color, setColor] = useState(GENERAL_DEFAULT);
+  const [colorError, setColorError] = useState('');
+  const [colorAnchor, setColorAnchor] = useState(null);
   const [error, setError] = useState('');
 
   const isEditMode = !!task;
@@ -38,6 +44,8 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, viewOnly = false })
       setStartDate(task.startDate ? parseISO(task.startDate) : new Date());
       setEndDate(task.endDate ? parseISO(task.endDate) : new Date());
       setPriority(task.priority || 'general');
+      setColor(task.color || GENERAL_DEFAULT);
+      setColorError('');
     } else {
       resetForm();
     }
@@ -49,13 +57,25 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, viewOnly = false })
     setStartDate(new Date());
     setEndDate(new Date());
     setPriority('general');
+    setColor(GENERAL_DEFAULT);
+    setColorError('');
     setError('');
+  };
+
+  // Apply a color from the spectrum picker / hex input, guarding against
+  // mimicking the reserved priority (red) / important (amber) tiers.
+  const applyColor = (next) => {
+    setColor(next); // reflect the live selection on the swatch/field
+    setColorError(isColorReserved(next)
+      ? 'Color reserved for priority/important tasks. Pick another.'
+      : '');
   };
 
   const handleSave = () => {
     // Validation
     if (!taskName.trim()) return setError('Task Name is required');
     if (startDate && endDate && isBefore(startOfDay(endDate), startOfDay(startDate))) return setError('End Date cannot be before Start Date');
+    if (priority === 'general' && colorError) return setError('Fix the task color before saving');
 
     const taskData = {
       title: taskName,
@@ -63,6 +83,8 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, viewOnly = false })
       startDate: startDate?.toISOString() || null,
       endDate: endDate?.toISOString() || null,
       priority,
+      // Custom color only applies to general tasks; other tiers use fixed defaults.
+      color: priority === 'general' ? color : null,
       ...(isEditMode ? { _id: task?._id } : {})
     };
 
@@ -177,19 +199,87 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, viewOnly = false })
             </Box>
           </Box>
 
-          <FormControl fullWidth size="small" sx={{ mt: 1 }}>
-            <InputLabel sx={{ fontSize: '0.75rem', fontWeight: 500 }}>Priority Level</InputLabel>
-            <Select
-              value={priority}
-              label="Priority Level"
-              onChange={(e) => setPriority(e.target.value)}
-              disabled={viewOnly}
-              sx={{ borderRadius: '10px', fontSize: '0.8rem' }}
+          <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', mt: 1 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ fontSize: '0.75rem', fontWeight: 500 }}>Priority Level</InputLabel>
+              <Select
+                value={priority}
+                label="Priority Level"
+                onChange={(e) => setPriority(e.target.value)}
+                disabled={viewOnly}
+                sx={{ borderRadius: '10px', fontSize: '0.8rem' }}
+              >
+                <MenuItem value="general" sx={{ fontSize: '0.8rem' }}>General</MenuItem>
+                <MenuItem value="important" sx={{ fontSize: '0.8rem', fontWeight: 600, color: getImportantColor() }}>Important</MenuItem>
+                <MenuItem value="priority" sx={{ fontSize: '0.8rem', fontWeight: 600, color: getPriorityColor() }}>Priority</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Color picker: general tasks only. Priority/Important use fixed colors. */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+              <Box
+                onClick={(e) => {
+                  if (viewOnly || priority !== 'general') return;
+                  setColorAnchor(e.currentTarget);
+                }}
+                title={priority === 'general' ? 'Pick a color for this task' : 'Color is fixed for priority/important tasks'}
+                sx={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  bgcolor: priority === 'priority' ? getPriorityColor() : priority === 'important' ? getImportantColor() : color,
+                  cursor: (viewOnly || priority !== 'general') ? 'not-allowed' : 'pointer',
+                  opacity: (viewOnly || priority !== 'general') ? 0.6 : 1,
+                  transition: 'transform 0.15s ease',
+                  '&:hover': { transform: (viewOnly || priority !== 'general') ? 'none' : 'scale(1.05)' }
+                }}
+              />
+            </Box>
+          </Box>
+
+          <Popover
+            open={Boolean(colorAnchor)}
+            anchorEl={colorAnchor}
+            onClose={() => setColorAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+            PaperProps={{ sx: { p: 1.5, borderRadius: '12px' } }}
+          >
+            {/* Full spectrum picker (hex-only, no RGB) */}
+            <Box
+              sx={{
+                '& .react-colorful': { width: 180, height: 150 },
+                '& .react-colorful__saturation': { borderRadius: '8px 8px 0 0' },
+                '& .react-colorful__last-control': { borderRadius: '0 0 8px 8px' },
+              }}
             >
-              <MenuItem value="general" sx={{ fontSize: '0.8rem' }}>General</MenuItem>
-              <MenuItem value="priority" sx={{ fontSize: '0.8rem', fontWeight: 600 }}>Priority</MenuItem>
-            </Select>
-          </FormControl>
+              <HexColorPicker color={color} onChange={applyColor} />
+            </Box>
+            <Box sx={{ mt: 1 }}>
+              <HexColorInput
+                color={color}
+                onChange={applyColor}
+                prefixed
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '6px 8px',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  fontSize: '0.8rem',
+                  outline: 'none',
+                  textTransform: 'lowercase',
+                }}
+              />
+            </Box>
+          </Popover>
+
+          {colorError && (
+            <Typography color="error" variant="caption" sx={{ mt: -1, fontWeight: 500, fontSize: '0.72rem' }}>
+              {colorError}
+            </Typography>
+          )}
 
           {error && !error.includes('Name') && (
             <Typography color="error" variant="caption" sx={{ mt: 0, fontWeight: 500, fontSize: '0.75rem' }}>

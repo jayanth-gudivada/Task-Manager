@@ -10,6 +10,7 @@ exports.createTask = async (req, res) => {
       startDate: req.body.startDate,
       endDate: req.body.endDate,
       priority: req.body.priority || 'general',
+      color: req.body.color || null, // Custom color for general tasks; null for priority/important
       status: 1, // 1 = Active, 0 = Completed
       createdAt: new Date(),
     };

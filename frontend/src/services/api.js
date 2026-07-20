@@ -36,3 +36,17 @@ export const taskService = {
     return response.data;
   }
 };
+
+export const settingsService = {
+  // Get tier colors (priority / important)
+  getSettings: async () => {
+    const response = await axios.get(`${API_URL}/settings`);
+    return response.data;
+  },
+
+  // Update tier colors
+  updateSettings: async (settings) => {
+    const response = await axios.put(`${API_URL}/settings`, settings);
+    return response.data;
+  }
+};

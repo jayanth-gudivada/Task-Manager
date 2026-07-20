@@ -5,8 +5,10 @@ import Header from './components/Header';
 import { API_URL } from './services/api';
 import CalendarPage from './pages/CalendarPage';
 import PerformancePage from './pages/PerformancePage';
+import AccountSettingsPage from './pages/AccountSettingsPage';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import BarChartIcon from '@mui/icons-material/BarChart';
+import SettingsIcon from '@mui/icons-material/Settings';
 import { IconButton, Tooltip } from '@mui/material';
 
 const theme = createTheme({
@@ -108,6 +110,8 @@ const AppContent = ({ currentView, setCurrentView, healthStatus, loading }) => {
         <Box sx={{ flexGrow: 1, overflow: { xs: 'visible', md: 'hidden' } }}>
           {currentView === 'calendar' ? (
             <CalendarPage />
+          ) : currentView === 'settings' ? (
+            <AccountSettingsPage />
           ) : (
             <PerformancePage />
           )}
@@ -176,6 +180,20 @@ const Sidebar = ({ activeView, onViewChange }) => {
           }}
         >
           <BarChartIcon fontSize="medium" />
+        </IconButton>
+      </Tooltip>
+
+      <Tooltip title="Account Settings" placement="right">
+        <IconButton
+          onClick={() => onViewChange('settings')}
+          sx={{
+            color: activeView === 'settings' ? 'primary.main' : 'text.secondary',
+            bgcolor: activeView === 'settings' ? 'primary.light' : 'transparent',
+            borderRadius: '12px',
+            '&:hover': { bgcolor: 'primary.light' }
+          }}
+        >
+          <SettingsIcon fontSize="medium" />
         </IconButton>
       </Tooltip>
     </Box>

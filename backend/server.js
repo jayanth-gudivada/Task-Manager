@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const taskRoutes = require('./routes/taskRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -49,6 +50,7 @@ async function run() {
 
     // Routes
     app.use('/api/tasks', taskRoutes);
+    app.use('/api/settings', settingsRoutes);
 
     // Basic health API
     app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok', message: 'Backend is running and accessible!' }));

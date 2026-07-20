@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
-import { API_URL } from '../services/api';
+import { API_URL, settingsService } from '../services/api';
+import { configureTierColors, DEFAULT_PRIORITY_COLOR, DEFAULT_IMPORTANT_COLOR } from '../utils/TaskColors';
 
 const TaskContext = createContext();
 
@@ -23,6 +24,35 @@ export const TaskProvider = ({ children }) => {
   const [loadingHistory, setLoadingHistory] = useState(false);
   
   const [initialized, setInitialized] = useState({ tasks: false, stats: false });
+
+  // Account settings: user-chosen tier colors (seeded with project-base defaults).
+  const [tierColors, setTierColors] = useState({
+    priorityColor: DEFAULT_PRIORITY_COLOR,
+    importantColor: DEFAULT_IMPORTANT_COLOR,
+  });
+
+  // Load settings once and push them into the shared color engine.
+  const fetchSettings = useCallback(async () => {
+    try {
+      const data = await settingsService.getSettings();
+      setTierColors(data);
+      configureTierColors({ priority: data.priorityColor, important: data.importantColor });
+    } catch (err) {
+      console.error('Error fetching settings:', err);
+      // Keep project-base fallback colors already applied by default.
+    }
+  }, []);
+
+  const updateTierColors = useCallback(async (settings) => {
+    const saved = await settingsService.updateSettings(settings);
+    setTierColors(saved);
+    configureTierColors({ priority: saved.priorityColor, important: saved.importantColor });
+    return saved;
+  }, []);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
 
   // Fetch active tasks
   const fetchTasks = useCallback(async (force = false) => {
@@ -91,7 +121,10 @@ export const TaskProvider = ({ children }) => {
     fetchTasks,
     fetchStats,
     fetchCompletedTasks,
-    refreshAll
+    refreshAll,
+    tierColors,
+    fetchSettings,
+    updateTierColors
   };
 
   return (

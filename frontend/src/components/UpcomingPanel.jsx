@@ -9,6 +9,10 @@ import EngineeringIcon from '@mui/icons-material/Engineering';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import { getTaskColor } from '../utils/TaskColors';
 
+// Task importance ordering: priority > important > general.
+const priorityRank = (priority) =>
+  priority === 'priority' ? 2 : priority === 'important' ? 1 : 0;
+
 const UpcomingPanel = ({ tasks = [], loading }) => {
   const today = new Date();
   const startOfToday = startOfDay(today);
@@ -26,10 +30,10 @@ const UpcomingPanel = ({ tasks = [], loading }) => {
       }
     })
     .sort((a, b) => {
-      // 1. Priority tasks first
-      if (a.priority === 'priority' && b.priority !== 'priority') return -1;
-      if (a.priority !== 'priority' && b.priority === 'priority') return 1;
-      
+      // 1. By importance: priority > important > general
+      const rankDiff = priorityRank(b.priority) - priorityRank(a.priority);
+      if (rankDiff !== 0) return rankDiff;
+
       // 2. Then by deadline
       try {
         return parseISO(a.endDate) - parseISO(b.endDate);
@@ -55,6 +59,7 @@ const UpcomingPanel = ({ tasks = [], loading }) => {
 
   const getCategory = (task) => {
     if (task.priority === 'priority') return 'Priority';
+    if (task.priority === 'important') return 'Important';
     const title = (task.title || '').toLowerCase();
     if (title.includes('review') || title.includes('payroll')) return 'Finance';
     if (title.includes('ux') || title.includes('onboarding') || title.includes('senior')) return 'Recruitment';
@@ -96,12 +101,13 @@ const UpcomingPanel = ({ tasks = [], loading }) => {
       </Box>
       
       {loading ? (
-        <Box sx={{ 
+        <Box sx={{
           flexGrow: 1,
-          display: 'flex', 
-          flexDirection: 'column', 
-          gap: 1.5, 
-          overflowY: 'auto', 
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+          alignContent: 'start',
+          gap: 1.5,
+          overflowY: 'auto',
           overflowX: 'hidden',
           px: 1,
           pb: 2
@@ -141,14 +147,15 @@ const UpcomingPanel = ({ tasks = [], loading }) => {
           </Typography>
         </Box>
       ) : (
-        <Box sx={{ 
+        <Box sx={{
           flexGrow: 1,
-          display: 'flex', 
-          flexDirection: 'column', 
-          gap: 1.5, 
-          overflowY: 'auto', 
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+          alignContent: 'start',
+          gap: 1.5,
+          overflowY: 'auto',
           overflowX: 'hidden',
-          px: 1, 
+          px: 1,
           pb: 2,
           minWidth: 0,
           '&::-webkit-scrollbar': { width: '4px' },
@@ -158,9 +165,10 @@ const UpcomingPanel = ({ tasks = [], loading }) => {
           {upcomingTasks.map((task) => {
             const urgency = getUrgencyData(task);
             const category = getCategory(task);
-            const taskColor = getTaskColor(task.title, task.priority);
+            const taskColor = getTaskColor(task.title, task.priority, task.color);
             const isPriority = task.priority === 'priority';
-            
+            const isImportant = task.priority === 'important';
+
             return (
               <Paper
                 key={task._id}
@@ -177,11 +185,11 @@ const UpcomingPanel = ({ tasks = [], loading }) => {
                   cursor: 'pointer',
                   flexShrink: 0,
                   transition: 'all 0.2s ease',
-                  border: isPriority ? '1px solid #fee2e2' : '1px solid #f1f5f9',
+                  border: isPriority ? '1px solid #fee2e2' : isImportant ? '1px solid #fef3c7' : '1px solid #f1f5f9',
                   '&:hover': {
-                    boxShadow: isPriority ? '0 8px 16px rgba(239, 68, 68, 0.08)' : `0 8px 16px ${taskColor}15`,
+                    boxShadow: isPriority ? '0 8px 16px rgba(239, 68, 68, 0.08)' : isImportant ? '0 8px 16px rgba(245, 158, 11, 0.10)' : `0 8px 16px ${taskColor}15`,
                     transform: 'translateY(-2px)',
-                    bgcolor: isPriority ? '#fffafb' : 'white'
+                    bgcolor: isPriority ? '#fffafb' : isImportant ? '#fffdf5' : 'white'
                   }
                 }}
               >
@@ -234,18 +242,18 @@ const UpcomingPanel = ({ tasks = [], loading }) => {
                       >
                         {task.title}
                       </Typography>
-                      <Chip 
-                        label={category} 
-                        size="small" 
-                        sx={{ 
-                          height: 16, 
-                          fontSize: '0.55rem', 
-                          fontWeight: 700, 
-                          color: category === 'Priority' ? '#ef4444' : '#64748b', 
-                          bgcolor: category === 'Priority' ? '#fee2e2' : '#f1f5f9',
+                      <Chip
+                        label={category}
+                        size="small"
+                        sx={{
+                          height: 16,
+                          fontSize: '0.55rem',
+                          fontWeight: 700,
+                          color: category === 'Priority' ? '#ef4444' : category === 'Important' ? '#f59e0b' : '#64748b',
+                          bgcolor: category === 'Priority' ? '#fee2e2' : category === 'Important' ? '#fef3c7' : '#f1f5f9',
                           borderRadius: '4px',
                           flexShrink: 0
-                        }} 
+                        }}
                       />
                     </Box>
 
