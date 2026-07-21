@@ -151,7 +151,9 @@ const UpcomingPanel = ({ tasks = [], loading, context = 'mine' }) => {
               <Paper
                 key={task._id}
                 elevation={0}
-                onClick={() => window.onEditTask && window.onEditTask(task)}
+                onClick={() => (context === 'assigned'
+                  ? window.onViewTask && window.onViewTask(task)
+                  : window.onEditTask && window.onEditTask(task))}
                 sx={{
                   display: 'flex',
                   height: 120, // RIGID FIXED HEIGHT

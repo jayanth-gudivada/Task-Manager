@@ -4,7 +4,11 @@ import CalendarHeader from '../components/CalendarHeader';
 import CalendarGrid from '../components/CalendarGrid';
 import TaskDialog from '../components/TaskDialog';
 import UpcomingPanel from '../components/UpcomingPanel';
+import ApprovalPanel from '../components/ApprovalPanel';
+import ReassignPanel from '../components/ReassignPanel';
 import { taskService } from '../services/api';
+import { useSelector } from 'react-redux';
+import { selectUser } from '../store/authSlice';
 
 import { useTasks } from '../context/TaskContext';
 
@@ -13,18 +17,29 @@ const CalendarPage = () => {
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null); // Prefill start date when creating from a day cell
+  const [dialogViewOnly, setDialogViewOnly] = useState(false); // Assigned-tab tasks are read-only
   const [activeTab, setActiveTab] = useState(0); // 0 = My Tasks, 1 = Tasks Assigned
+  const me = useSelector(selectUser);
   const {
     tasks, loadingTasks: loading, fetchTasks,
     assignedTasks, loadingAssigned, fetchAssignedTasks,
+    approvalPending, waitingApproval, reassignTasks, fetchApprovals,
     refreshAll,
   } = useTasks();
 
-  // Fetch both task lists on initial load (Context handles first-time checks).
+  // Fetch all task lists on initial load (Context handles first-time checks).
   useEffect(() => {
     fetchTasks();
     fetchAssignedTasks();
-  }, [fetchTasks, fetchAssignedTasks]);
+    fetchApprovals();
+  }, [fetchTasks, fetchAssignedTasks, fetchApprovals]);
+
+  // Approval workflow actions — refresh every list afterwards.
+  const handleAccept = async (id) => { await taskService.acceptTask(id); await refreshAll(); };
+  const handleRequestChange = async (id, remark) => { await taskService.requestChange(id, remark); await refreshAll(); };
+  const handleResubmit = async (id, changes) => { await taskService.resubmitTask(id, changes); await refreshAll(); };
+  const handleReject = async (id, remark) => { await taskService.rejectTask(id, remark); await refreshAll(); };
+  const handleReassign = async (id, changes) => { await taskService.reassignTask(id, changes); await refreshAll(); };
 
   // Expose handlers to window so CalendarGrid and UpcomingPanel can trigger them.
   useEffect(() => {
@@ -32,6 +47,14 @@ const CalendarPage = () => {
     window.onEditTask = (task) => {
       setSelectedTask(task);
       setSelectedDate(null);
+      setDialogViewOnly(false);
+      setIsTaskDialogOpen(true);
+    };
+    // View a task read-only (tasks I assigned to others — not editable by me).
+    window.onViewTask = (task) => {
+      setSelectedTask(task);
+      setSelectedDate(null);
+      setDialogViewOnly(true);
       setIsTaskDialogOpen(true);
     };
     // Create a new task on a clicked day, with its start date prefilled.
@@ -42,6 +65,7 @@ const CalendarPage = () => {
     };
     return () => {
       delete window.onEditTask;
+      delete window.onViewTask;
       delete window.onSelectDate;
     };
   }, []);
@@ -135,18 +159,33 @@ const CalendarPage = () => {
             <Tabs
               value={activeTab}
               onChange={(_, v) => setActiveTab(v)}
+              variant="scrollable"
+              scrollButtons="auto"
               sx={{
                 px: 1, minHeight: 40,
                 '& .MuiTab-root': { textTransform: 'none', fontWeight: 700, minHeight: 40, fontSize: '0.85rem' },
               }}
             >
-              <Tab label="My Tasks" />
+              <Tab label={`My Tasks${tasks.length ? ` (${tasks.length})` : ''}`} />
               <Tab label={`Tasks Assigned${assignedTasks.length ? ` (${assignedTasks.length})` : ''}`} />
+              <Tab label={`Approval Pending${approvalPending.length ? ` (${approvalPending.length})` : ''}`} />
+              <Tab label={`Waiting for Approval${waitingApproval.length ? ` (${waitingApproval.length})` : ''}`} />
+              <Tab label={`Reassign Task${reassignTasks.length ? ` (${reassignTasks.length})` : ''}`} />
             </Tabs>
             <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex' }}>
-              {activeTab === 0
-                ? <UpcomingPanel tasks={tasks} loading={loading} />
-                : <UpcomingPanel tasks={assignedTasks} loading={loadingAssigned} context="assigned" />}
+              {activeTab === 0 && <UpcomingPanel tasks={tasks} loading={loading} />}
+              {activeTab === 1 && <UpcomingPanel tasks={assignedTasks} loading={loadingAssigned} context="assigned" />}
+              {activeTab === 2 && (
+                <ApprovalPanel tasks={approvalPending} mode="pending" me={me}
+                  onAccept={handleAccept} onRequestChange={handleRequestChange}
+                  onReject={handleReject} onResubmit={handleResubmit} />
+              )}
+              {activeTab === 3 && (
+                <ApprovalPanel tasks={waitingApproval} mode="waiting" me={me} />
+              )}
+              {activeTab === 4 && (
+                <ReassignPanel tasks={reassignTasks} me={me} onReassign={handleReassign} />
+              )}
             </Box>
           </Box>
         </Grid>
@@ -158,11 +197,14 @@ const CalendarPage = () => {
           setIsTaskDialogOpen(false);
           setSelectedTask(null);
           setSelectedDate(null);
+          setDialogViewOnly(false);
         }}
         onSave={handleSaveTask}
         onDelete={handleDeleteTask}
+        onRequestChange={handleRequestChange}
         task={selectedTask}
         initialDate={selectedDate}
+        viewOnly={dialogViewOnly}
       />
     </Box>
   );

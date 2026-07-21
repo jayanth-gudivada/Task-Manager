@@ -74,6 +74,40 @@ export const taskService = {
   deleteTask: async (id) => {
     const response = await axios.delete(`${API_URL}/tasks/${id}`);
     return response.data;
+  },
+
+  // --- Approval workflow ---
+  getApprovalPending: async () => {
+    const response = await axios.get(`${API_URL}/tasks/approval-pending`);
+    return response.data;
+  },
+  getWaitingApproval: async () => {
+    const response = await axios.get(`${API_URL}/tasks/waiting-approval`);
+    return response.data;
+  },
+  getReassign: async () => {
+    const response = await axios.get(`${API_URL}/tasks/reassign`);
+    return response.data;
+  },
+  rejectTask: async (id, remark) => {
+    const response = await axios.post(`${API_URL}/tasks/${id}/reject`, { remark });
+    return response.data;
+  },
+  reassignTask: async (id, changes) => {
+    const response = await axios.post(`${API_URL}/tasks/${id}/reassign`, changes);
+    return response.data;
+  },
+  acceptTask: async (id) => {
+    const response = await axios.post(`${API_URL}/tasks/${id}/accept`);
+    return response.data;
+  },
+  requestChange: async (id, remark) => {
+    const response = await axios.post(`${API_URL}/tasks/${id}/request-change`, { remark });
+    return response.data;
+  },
+  resubmitTask: async (id, changes) => {
+    const response = await axios.post(`${API_URL}/tasks/${id}/resubmit`, changes);
+    return response.data;
   }
 };
 

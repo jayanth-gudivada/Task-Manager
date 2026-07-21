@@ -27,7 +27,7 @@ import { GENERAL_DEFAULT, isColorReserved, getPriorityColor, getImportantColor }
 import { teamService } from '../services/api';
 import { selectUser } from '../store/authSlice';
 
-const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null, viewOnly = false }) => {
+const TaskDialog = ({ open, onClose, onSave, onDelete, onRequestChange, task, initialDate = null, viewOnly = false }) => {
   const [taskName, setTaskName] = useState('');
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState(new Date());
@@ -43,7 +43,16 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
   const [teamId, setTeamId] = useState('');
   const [assigneeId, setAssigneeId] = useState('');
   const [myTeams, setMyTeams] = useState([]);
+  const [requesting, setRequesting] = useState(false); // Request-change remark mode
+  const [remark, setRemark] = useState('');
   const me = useSelector(selectUser);
+
+  // A task I received: I'm the assignee but not the creator. Such a task is
+  // read-only for me (only its color is editable); I can only request changes.
+  const isReceived = !!task && !!me
+    && String(task.assigneeId) === String(me._id)
+    && String(task.ownerId) !== String(me._id);
+  const readOnly = viewOnly || isReceived;
 
   // Members of the selected team, minus the current user — assigning to
   // yourself is the "Myself" option, so it's redundant here.
@@ -63,6 +72,8 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
       setColor(task.color || GENERAL_DEFAULT);
       setColorError('');
       setErrors({});
+      setRequesting(false);
+      setRemark('');
       setAssignmentType(task.assignmentType || 'self');
       setTeamId(task.teamId || '');
       setAssigneeId(task.assignmentType === 'team' ? (task.assigneeId || '') : '');
@@ -91,9 +102,25 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
     setColor(GENERAL_DEFAULT);
     setColorError('');
     setErrors({});
+    setRequesting(false);
+    setRemark('');
     setAssignmentType('self');
     setTeamId('');
     setAssigneeId('');
+  };
+
+  // Received task: save only the color change (nothing else is editable).
+  const handleSaveColor = () => {
+    onSave({ _id: task._id, color: priority === 'general' ? color : (task.color || null) });
+    onClose();
+  };
+
+  // Received task: send a change request (with a remark) back to the assigner.
+  const handleRequestChange = () => {
+    if (!requesting) { setRequesting(true); return; }
+    if (!remark.trim()) { setErrors({ remark: 'Please describe the change you need' }); return; }
+    onRequestChange?.(task._id, remark.trim());
+    onClose();
   };
 
   // Apply a color from the spectrum picker / hex input, guarding against
@@ -168,7 +195,7 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
         alignItems: 'center',
         justifyContent: 'space-between'
       }}>
-        {viewOnly ? 'Task Details' : isEditMode ? 'Edit Task' : 'Create New Task'}
+        {viewOnly || isReceived ? 'Task Details' : isEditMode ? 'Edit Task' : 'Create New Task'}
         <IconButton
           onClick={onClose}
           size="small"
@@ -190,7 +217,7 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
             size="small" // Compressing scale
             value={taskName}
             onChange={(e) => setTaskName(e.target.value)}
-            disabled={viewOnly}
+            disabled={readOnly}
             variant="outlined"
             placeholder="e.g., Weekly Sync"
             autoFocus
@@ -210,7 +237,7 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
             size="small"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            disabled={viewOnly}
+            disabled={readOnly}
             variant="outlined"
             placeholder="What needs to be done?"
             error={!!errors.description}
@@ -229,8 +256,8 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
                 selected={startDate}
                 onChange={(date) => setStartDate(date)}
                 dateFormat="dd/MM/yyyy"
-                disabled={viewOnly}
-                customInput={<TextField fullWidth size="small" disabled={viewOnly} error={!!errors.startDate} sx={{
+                disabled={readOnly}
+                customInput={<TextField fullWidth size="small" disabled={readOnly} error={!!errors.startDate} sx={{
                   '& .MuiOutlinedInput-root': { borderRadius: '10px', fontSize: '0.8rem' },
                   '& .MuiInputBase-input': { py: 0.8 }
                 }} />}
@@ -251,8 +278,8 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
                 onChange={(date) => setEndDate(date)}
                 dateFormat="dd/MM/yyyy"
                 minDate={startDate}
-                disabled={viewOnly}
-                customInput={<TextField fullWidth size="small" disabled={viewOnly} error={!!errors.endDate} sx={{
+                disabled={readOnly}
+                customInput={<TextField fullWidth size="small" disabled={readOnly} error={!!errors.endDate} sx={{
                   '& .MuiOutlinedInput-root': { borderRadius: '10px', fontSize: '0.8rem' },
                   '& .MuiInputBase-input': { py: 0.8 }
                 }} />}
@@ -266,7 +293,10 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
             </Box>
           </Box>
 
-          {/* Assignment: to myself, or to a member of a team I'm in. */}
+          {/* Assignment: to myself, or to a member of a team I'm in.
+              Hidden on a received task — the assignee can't reassign it. */}
+          {!isReceived && (
+          <>
           <FormControl fullWidth size="small" required>
             <InputLabel sx={{ fontSize: '0.75rem', fontWeight: 500 }}>Assign To</InputLabel>
             <Select
@@ -276,7 +306,7 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
                 setAssignmentType(e.target.value);
                 if (e.target.value === 'self') { setTeamId(''); setAssigneeId(''); }
               }}
-              disabled={viewOnly}
+              disabled={readOnly}
               sx={{ borderRadius: '10px', fontSize: '0.8rem' }}
             >
               <MenuItem value="self" sx={{ fontSize: '0.8rem' }}>Myself</MenuItem>
@@ -292,7 +322,7 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
                   value={teamId}
                   label="Team"
                   onChange={(e) => { setTeamId(e.target.value); setAssigneeId(''); }}
-                  disabled={viewOnly}
+                  disabled={readOnly}
                   sx={{ borderRadius: '10px', fontSize: '0.8rem' }}
                 >
                   {myTeams.length === 0 && (
@@ -324,6 +354,20 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
               </FormControl>
             </>
           )}
+          </>
+          )}
+
+          {/* Change-request remark (received task). */}
+          {isReceived && requesting && (
+            <TextField
+              label="Describe the change you need"
+              value={remark}
+              onChange={(e) => setRemark(e.target.value)}
+              fullWidth multiline rows={3} size="small" autoFocus
+              error={!!errors.remark}
+              helperText={errors.remark}
+            />
+          )}
 
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', mt: 1 }}>
             <FormControl fullWidth size="small" required>
@@ -332,7 +376,7 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
                 value={priority}
                 label="Priority Level"
                 onChange={(e) => setPriority(e.target.value)}
-                disabled={viewOnly}
+                disabled={readOnly}
                 sx={{ borderRadius: '10px', fontSize: '0.8rem' }}
               >
                 <MenuItem value="general" sx={{ fontSize: '0.8rem' }}>General</MenuItem>
@@ -410,69 +454,66 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
       </DialogContent>
 
       {!viewOnly && (
-        <DialogActions sx={{ p: 4, pt: 2, gap: 2, justifyContent: 'center' }}>
-          {isEditMode && (
+        <DialogActions sx={{ p: 4, pt: 2, gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+          {isReceived ? (
+            /* Received task: read-only details; only color is saveable, plus request-change. */
+            requesting ? (
+              <>
+                <Button onClick={() => { setRequesting(false); setRemark(''); setErrors({}); }}
+                  sx={{ fontWeight: 600, color: '#64748b', textTransform: 'none', fontSize: '0.85rem' }}>
+                  Cancel
+                </Button>
+                <Button onClick={handleRequestChange} variant="contained"
+                  sx={{ fontWeight: 600, borderRadius: '10px', px: 4, textTransform: 'none', fontSize: '0.85rem', bgcolor: 'primary.main', '&:hover': { bgcolor: '#7c3aed' } }}>
+                  Send Request
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button onClick={handleSaveColor} variant="contained"
+                  sx={{ fontWeight: 600, borderRadius: '10px', px: 4, textTransform: 'none', fontSize: '0.85rem', bgcolor: 'primary.main', '&:hover': { bgcolor: '#7c3aed' } }}>
+                  Save Color
+                </Button>
+                <Button onClick={handleRequestChange} variant="outlined"
+                  sx={{ fontWeight: 600, color: '#ea580c', borderColor: '#fed7aa', textTransform: 'none', fontSize: '0.85rem', px: 2, borderRadius: '10px', '&:hover': { bgcolor: '#fff7ed', borderColor: '#fdba74' } }}>
+                  Request Change
+                </Button>
+                <Button onClick={handleComplete} variant="outlined"
+                  sx={{ fontWeight: 600, color: '#16a34a', borderColor: '#bcf0da', textTransform: 'none', fontSize: '0.85rem', px: 2, borderRadius: '10px', '&:hover': { bgcolor: '#f0fdf4', borderColor: '#86efac' } }}>
+                  Complete
+                </Button>
+              </>
+            )
+          ) : (
             <>
+              {isEditMode && (
+                <>
+                  <Button
+                    onClick={() =>
+                      window.confirm('Delete this task?')
+                        ? (onDelete(task?._id), onClose())
+                        : null
+                    }
+                    sx={{ fontWeight: 600, color: '#ef4444', textTransform: 'none', fontSize: '0.85rem', bgcolor: '#fff1f2', px: 2, borderRadius: '10px', minWidth: '80px', '&:hover': { bgcolor: '#ffe4e6' } }}
+                  >
+                    Delete
+                  </Button>
+                  <Button onClick={handleComplete} variant="outlined"
+                    sx={{ fontWeight: 600, color: '#16a34a', borderColor: '#bcf0da', textTransform: 'none', fontSize: '0.85rem', px: 2, borderRadius: '10px', minWidth: '100px', '&:hover': { bgcolor: '#f0fdf4', borderColor: '#86efac' } }}>
+                    Complete
+                  </Button>
+                </>
+              )}
+
               <Button
-                onClick={() =>
-                  window.confirm('Delete this task?')
-                    ? (onDelete(task?._id), onClose())
-                    : null
-                }
-                sx={{
-                  fontWeight: 600,
-                  color: '#ef4444',
-                  textTransform: 'none',
-                  fontSize: '0.85rem',
-                  bgcolor: '#fff1f2',
-                  px: 2,
-                  borderRadius: '10px',
-                  minWidth: '80px',
-                  '&:hover': { bgcolor: '#ffe4e6' }
-                }}
+                onClick={handleSave}
+                variant="contained"
+                sx={{ fontWeight: 600, borderRadius: '10px', px: 5, textTransform: 'none', fontSize: '0.85rem', bgcolor: 'primary.main', minWidth: '100px', boxShadow: '0 4px 12px rgba(133, 41, 216, 0.2)', '&:hover': { bgcolor: '#7c3aed', boxShadow: '0 8px 20px rgba(133, 41, 216, 0.3)' } }}
               >
-                Delete
-              </Button>
-              <Button
-                onClick={handleComplete}
-                variant="outlined"
-                sx={{
-                  fontWeight: 600,
-                  color: '#16a34a',
-                  borderColor: '#bcf0da',
-                  textTransform: 'none',
-                  fontSize: '0.85rem',
-                  px: 2,
-                  borderRadius: '10px',
-                  minWidth: '100px',
-                  '&:hover': { bgcolor: '#f0fdf4', borderColor: '#86efac' }
-                }}
-              >
-                Complete
+                {isEditMode ? 'Update' : 'Submit'}
               </Button>
             </>
           )}
-
-          <Button
-            onClick={handleSave}
-            variant="contained"
-            sx={{
-              fontWeight: 600,
-              borderRadius: '10px',
-              px: 5,
-              textTransform: 'none',
-              fontSize: '0.85rem',
-              bgcolor: 'primary.main',
-              minWidth: '100px',
-              boxShadow: '0 4px 12px rgba(133, 41, 216, 0.2)',
-              '&:hover': {
-                bgcolor: '#7c3aed',
-                boxShadow: '0 8px 20px rgba(133, 41, 216, 0.3)'
-              }
-            }}
-          >
-            {isEditMode ? 'Update' : 'Submit'}
-          </Button>
         </DialogActions>
       )}
     </Dialog>

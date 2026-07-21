@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import axios from 'axios';
-import { API_URL } from '../services/api';
+import { API_URL, taskService } from '../services/api';
 
 // Tier colors moved to the Redux settingsSlice; this context now owns only
 // task data (active tasks, stats, completed history).
@@ -17,6 +17,9 @@ export const useTasks = () => {
 export const TaskProvider = ({ children }) => {
   const [tasks, setTasks] = useState([]);
   const [assignedTasks, setAssignedTasks] = useState([]);
+  const [approvalPending, setApprovalPending] = useState([]);
+  const [waitingApproval, setWaitingApproval] = useState([]);
+  const [reassignTasks, setReassignTasks] = useState([]);
   const [stats, setStats] = useState(null);
   const [completedTasks, setCompletedTasks] = useState([]);
   const [totalCompletedCount, setTotalCompletedCount] = useState(0);
@@ -60,6 +63,22 @@ export const TaskProvider = ({ children }) => {
     }
   }, [initialized.assigned]);
 
+  // Approval workflow lists (loaded eagerly so tab badges are accurate).
+  const fetchApprovals = useCallback(async () => {
+    try {
+      const [pending, waiting, reassign] = await Promise.all([
+        taskService.getApprovalPending(),
+        taskService.getWaitingApproval(),
+        taskService.getReassign(),
+      ]);
+      setApprovalPending(pending);
+      setWaitingApproval(waiting);
+      setReassignTasks(reassign);
+    } catch (err) {
+      console.error('Error fetching approvals:', err);
+    }
+  }, []);
+
   // Fetch stats for Performance Page
   const fetchStats = useCallback(async (force = false) => {
     if (initialized.stats && !force) return;
@@ -97,13 +116,17 @@ export const TaskProvider = ({ children }) => {
     await Promise.all([
       fetchTasks(true),
       fetchAssignedTasks(true),
+      fetchApprovals(),
       fetchStats(true)
     ]);
-  }, [fetchTasks, fetchAssignedTasks, fetchStats]);
+  }, [fetchTasks, fetchAssignedTasks, fetchApprovals, fetchStats]);
 
   const value = {
     tasks,
     assignedTasks,
+    approvalPending,
+    waitingApproval,
+    reassignTasks,
     stats,
     completedTasks,
     totalCompletedCount,
@@ -113,6 +136,7 @@ export const TaskProvider = ({ children }) => {
     loadingHistory,
     fetchTasks,
     fetchAssignedTasks,
+    fetchApprovals,
     fetchStats,
     fetchCompletedTasks,
     refreshAll

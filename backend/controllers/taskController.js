@@ -8,15 +8,22 @@ const toObjectId = (id) => {
   try { return new ObjectId(id); } catch { return null; }
 };
 
-// A task belongs to my "My Tasks" view if I'm the assignee. Legacy tasks created
-// before assignment existed have no assigneeId — treat those as self-owned.
+// A task belongs to my "My Tasks" view if I'm the assignee and the task is
+// approved (self-tasks and accepted assignments). Legacy tasks have neither
+// assigneeId nor approvalStatus — treat those as approved & self-owned.
 const myTasksFilter = (userId) => ({
   status: 1,
+  approvalStatus: { $nin: ['pending', 'rejected'] }, // approved or legacy(missing)
   $or: [
     { assigneeId: userId },
     { assigneeId: { $exists: false }, ownerId: userId },
   ],
 });
+
+const userName = async (db, userId) => {
+  const u = await db.collection('users').findOne({ _id: toObjectId(userId) }, { projection: { name: 1 } });
+  return u?.name || null;
+};
 
 // Attach display names for the owner (who assigned it) and assignee (who it's
 // for) in a single lookup, so the UI can label assigned tasks.
@@ -56,11 +63,19 @@ exports.createTask = async (req, res) => {
       }
     }
 
+    // Assigning to another person starts an approval flow; self-tasks are
+    // approved immediately. pendingWith is whoever must act next.
+    const needsApproval = assignmentType === 'team' && String(assigneeId) !== String(req.userId);
+
     const task = {
       ownerId: req.userId,
       assignmentType,
       teamId,
       assigneeId,
+      approvalStatus: needsApproval ? 'pending' : 'approved',
+      pendingWith: needsApproval ? assigneeId : null,
+      remarks: [],
+      rejectedBy: [], // users who rejected this task (excluded from reassignment)
       title: req.body.title,
       description: req.body.description,
       startDate: req.body.startDate,
@@ -91,17 +106,148 @@ exports.getAllTasks = async (req, res) => {
   }
 };
 
-// Get tasks I created for other people
+// Get tasks I created for other people (approved ones)
 exports.getAssignedTasks = async (req, res) => {
   const db = req.app.locals.db;
   try {
     const tasks = await db.collection('tasks')
-      .find({ status: 1, ownerId: req.userId, assigneeId: { $exists: true, $ne: req.userId } })
+      .find({ status: 1, ownerId: req.userId, assigneeId: { $exists: true, $ne: req.userId }, approvalStatus: { $nin: ['pending', 'rejected'] } })
       .sort({ startDate: 1 })
       .toArray();
     res.status(200).json(await populateNames(db, tasks));
   } catch (error) {
     res.status(500).json({ message: 'Error retrieving assigned tasks', error: error.message });
+  }
+};
+
+// Tasks rejected by their assignee — the owner must reassign them.
+exports.getReassign = async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const tasks = await db.collection('tasks')
+      .find({ status: 1, approvalStatus: 'rejected', ownerId: req.userId })
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.status(200).json(await populateNames(db, tasks));
+  } catch (error) {
+    res.status(500).json({ message: 'Error retrieving tasks to reassign', error: error.message });
+  }
+};
+
+// Tasks awaiting MY action (I must accept or request a change).
+exports.getApprovalPending = async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const tasks = await db.collection('tasks')
+      .find({ status: 1, approvalStatus: 'pending', pendingWith: req.userId })
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.status(200).json(await populateNames(db, tasks));
+  } catch (error) {
+    res.status(500).json({ message: 'Error retrieving pending approvals', error: error.message });
+  }
+};
+
+// Tasks I'm involved in that are waiting on the OTHER party to act.
+exports.getWaitingApproval = async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const tasks = await db.collection('tasks')
+      .find({
+        status: 1,
+        approvalStatus: 'pending',
+        pendingWith: { $ne: req.userId },
+        $or: [{ ownerId: req.userId }, { assigneeId: req.userId }],
+      })
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.status(200).json(await populateNames(db, tasks));
+  } catch (error) {
+    res.status(500).json({ message: 'Error retrieving waiting approvals', error: error.message });
+  }
+};
+
+// Accept a task assigned to me → it becomes an approved task in my list.
+exports.acceptTask = async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const _id = toObjectId(req.params.id);
+    if (!_id) return res.status(400).json({ message: 'Invalid task id' });
+
+    const result = await db.collection('tasks').findOneAndUpdate(
+      { _id, approvalStatus: 'pending', pendingWith: req.userId },
+      { $set: { approvalStatus: 'approved', pendingWith: null } },
+      { returnDocument: 'after' }
+    );
+    if (!result) return res.status(404).json({ message: 'Task not found or not awaiting your approval' });
+    const [task] = await populateNames(db, [result]);
+    res.status(200).json(task);
+  } catch (error) {
+    res.status(400).json({ message: 'Error accepting task', error: error.message });
+  }
+};
+
+// Request a change: attach a remark and hand the task to the other party for
+// approval. Works both during the pending flow and on an already-accepted task
+// the assignee later wants changed (which re-opens the approval flow).
+exports.requestChange = async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const _id = toObjectId(req.params.id);
+    if (!_id) return res.status(400).json({ message: 'Invalid task id' });
+    const text = (req.body.remark || '').trim();
+    if (!text) return res.status(400).json({ message: 'A remark describing the change is required' });
+
+    // The requester must be a participant (owner or assignee) of the task.
+    const task = await db.collection('tasks').findOne({
+      _id, status: 1, $or: [{ ownerId: req.userId }, { assigneeId: req.userId }],
+    });
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    // Hand to the other participant. A self-task has no counterpart.
+    const other = String(req.userId) === String(task.assigneeId) ? task.ownerId : task.assigneeId;
+    if (!other || String(other) === String(req.userId)) {
+      return res.status(400).json({ message: 'There is no one to send this request to' });
+    }
+    const remark = { by: req.userId, byName: await userName(db, req.userId), text, at: new Date() };
+
+    const result = await db.collection('tasks').findOneAndUpdate(
+      { _id },
+      { $push: { remarks: remark }, $set: { approvalStatus: 'pending', pendingWith: other } },
+      { returnDocument: 'after' }
+    );
+    const [updated] = await populateNames(db, [result]);
+    res.status(200).json(updated);
+  } catch (error) {
+    res.status(400).json({ message: 'Error requesting change', error: error.message });
+  }
+};
+
+// Resubmit after making the requested changes → hand back to the other party.
+exports.resubmitTask = async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const _id = toObjectId(req.params.id);
+    if (!_id) return res.status(400).json({ message: 'Invalid task id' });
+
+    const task = await db.collection('tasks').findOne({ _id, approvalStatus: 'pending', pendingWith: req.userId });
+    if (!task) return res.status(404).json({ message: 'Task not found or not awaiting your action' });
+
+    const editable = {};
+    ['title', 'description', 'startDate', 'endDate', 'priority', 'color'].forEach((k) => {
+      if (req.body[k] !== undefined) editable[k] = req.body[k];
+    });
+    const other = String(req.userId) === String(task.assigneeId) ? task.ownerId : task.assigneeId;
+
+    const result = await db.collection('tasks').findOneAndUpdate(
+      { _id },
+      { $set: { ...editable, pendingWith: other } },
+      { returnDocument: 'after' }
+    );
+    const [updated] = await populateNames(db, [result]);
+    res.status(200).json(updated);
+  } catch (error) {
+    res.status(400).json({ message: 'Error resubmitting task', error: error.message });
   }
 };
 
@@ -127,19 +273,58 @@ exports.getUpcomingTasks = async (req, res) => {
 exports.updateTask = async (req, res) => {
   const db = req.app.locals.db;
   try {
-    const { id } = req.params;
-    // Never let a client reassign ownership or _id via the body.
-    const { _id, ownerId, ...updateFields } = req.body;
+    const _id = toObjectId(req.params.id);
+    if (!_id) return res.status(400).json({ message: 'Invalid task id' });
+
+    // The owner (creator) or the assignee may update a task — so an assignee can
+    // mark work assigned to them as complete.
+    const task = await db.collection('tasks').findOne({
+      _id, $or: [{ ownerId: req.userId }, { assigneeId: req.userId }],
+    });
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    // Never let a client set these directly — ownership, approval state, and the
+    // pending pointer are server-controlled.
+    const { _id: _bodyId, ownerId, approvalStatus, pendingWith, ...updateFields } = req.body;
+
+    // Reassignment must go through the same approval logic as creation, and only
+    // the owner may change it. Non-owners can't touch assignment fields.
+    if (updateFields.assignmentType !== undefined || updateFields.assigneeId !== undefined || updateFields.teamId !== undefined) {
+      if (String(task.ownerId) !== String(req.userId)) {
+        delete updateFields.assignmentType;
+        delete updateFields.assigneeId;
+        delete updateFields.teamId;
+      } else {
+        const type = updateFields.assignmentType === 'team' ? 'team' : 'self';
+        if (type === 'team') {
+          const team = updateFields.teamId ? await db.collection('teams').findOne({ _id: toObjectId(updateFields.teamId) }) : null;
+          if (!team) return res.status(400).json({ message: 'A valid team is required' });
+          const memberIds = (team.memberIds || []).map(String);
+          if (!updateFields.assigneeId || !memberIds.includes(String(updateFields.assigneeId))) {
+            return res.status(400).json({ message: 'Assignee must be a member of the selected team' });
+          }
+          const needsApproval = String(updateFields.assigneeId) !== String(req.userId);
+          updateFields.assignmentType = 'team';
+          updateFields.approvalStatus = needsApproval ? 'pending' : 'approved';
+          updateFields.pendingWith = needsApproval ? updateFields.assigneeId : null;
+          if (needsApproval) updateFields.remarks = []; // fresh approval cycle
+        } else {
+          updateFields.assignmentType = 'self';
+          updateFields.teamId = null;
+          updateFields.assigneeId = req.userId;
+          updateFields.approvalStatus = 'approved';
+          updateFields.pendingWith = null;
+        }
+      }
+    }
 
     // Set completedAt if status is changing to 0
     if (updateFields.status === 0) {
       updateFields.completedAt = new Date().toISOString();
     }
 
-    // The owner (creator) or the assignee may update a task — so an assignee can
-    // mark work assigned to them as complete.
     const result = await db.collection('tasks').findOneAndUpdate(
-      { _id: new ObjectId(id), $or: [{ ownerId: req.userId }, { assigneeId: req.userId }] },
+      { _id },
       { $set: updateFields },
       { returnDocument: 'after' }
     );
@@ -149,6 +334,72 @@ exports.updateTask = async (req, res) => {
       : res.status(200).json(result);
   } catch (error) {
     res.status(400).json({ message: 'Error updating task', error: error.message });
+  }
+};
+
+// Reject a task assigned to me → back to the owner to reassign to someone else.
+exports.rejectTask = async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const _id = toObjectId(req.params.id);
+    if (!_id) return res.status(400).json({ message: 'Invalid task id' });
+    const text = (req.body.remark || '').trim();
+    if (!text) return res.status(400).json({ message: 'A reason for rejecting is required' });
+
+    const task = await db.collection('tasks').findOne({ _id, approvalStatus: 'pending', pendingWith: req.userId });
+    if (!task) return res.status(404).json({ message: 'Task not found or not awaiting your action' });
+
+    const remark = { by: req.userId, byName: await userName(db, req.userId), text, at: new Date(), type: 'reject' };
+
+    const result = await db.collection('tasks').findOneAndUpdate(
+      { _id },
+      {
+        $push: { remarks: remark },
+        $addToSet: { rejectedBy: req.userId },     // never reassign back to this person
+        $set: { approvalStatus: 'rejected', pendingWith: task.ownerId },
+      },
+      { returnDocument: 'after' }
+    );
+    const [updated] = await populateNames(db, [result]);
+    res.status(200).json(updated);
+  } catch (error) {
+    res.status(400).json({ message: 'Error rejecting task', error: error.message });
+  }
+};
+
+// Owner reassigns a rejected task to a different team member → new approval cycle.
+exports.reassignTask = async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const _id = toObjectId(req.params.id);
+    if (!_id) return res.status(400).json({ message: 'Invalid task id' });
+
+    const task = await db.collection('tasks').findOne({ _id, approvalStatus: 'rejected', ownerId: req.userId });
+    if (!task) return res.status(404).json({ message: 'Task not found or not awaiting reassignment' });
+
+    const teamId = req.body.teamId || task.teamId;
+    const assigneeId = req.body.assigneeId;
+    const team = teamId ? await db.collection('teams').findOne({ _id: toObjectId(teamId) }) : null;
+    if (!team) return res.status(400).json({ message: 'A valid team is required' });
+
+    const memberIds = (team.memberIds || []).map(String);
+    const rejected = (task.rejectedBy || []).map(String);
+    if (!assigneeId || !memberIds.includes(String(assigneeId))) {
+      return res.status(400).json({ message: 'Assignee must be a member of the team' });
+    }
+    if (String(assigneeId) === String(req.userId) || rejected.includes(String(assigneeId))) {
+      return res.status(400).json({ message: 'Choose a different member who has not rejected this task' });
+    }
+
+    const result = await db.collection('tasks').findOneAndUpdate(
+      { _id },
+      { $set: { teamId, assigneeId, approvalStatus: 'pending', pendingWith: assigneeId } },
+      { returnDocument: 'after' }
+    );
+    const [updated] = await populateNames(db, [result]);
+    res.status(200).json(updated);
+  } catch (error) {
+    res.status(400).json({ message: 'Error reassigning task', error: error.message });
   }
 };
 
