@@ -23,7 +23,7 @@ import { format, isBefore, startOfDay, parseISO } from 'date-fns';
 import { HexColorPicker, HexColorInput } from 'react-colorful';
 import { GENERAL_DEFAULT, isColorReserved, getPriorityColor, getImportantColor } from '../utils/TaskColors';
 
-const TaskDialog = ({ open, onClose, onSave, onDelete, task, viewOnly = false }) => {
+const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null, viewOnly = false }) => {
   const [taskName, setTaskName] = useState('');
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState(new Date());
@@ -48,8 +48,13 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, viewOnly = false })
       setColorError('');
     } else {
       resetForm();
+      // Creating from a clicked calendar day: prefill the date selection.
+      if (initialDate) {
+        setStartDate(initialDate);
+        setEndDate(initialDate);
+      }
     }
-  }, [task, open]);
+  }, [task, open, initialDate]);
 
   const resetForm = () => {
     setTaskName('');

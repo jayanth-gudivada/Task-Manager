@@ -68,7 +68,7 @@ const CalendarGrid = ({ currentDate, tasks = [] }) => {
         gridTemplateColumns: 'repeat(7, 1fr)',
         gridTemplateRows: `repeat(${Math.ceil(days.length / 7)}, 1fr)`,
         columnGap: 1,
-        rowGap: 3,
+        rowGap: 1,
         flexGrow: 1,
         minHeight: 0
       }}>
@@ -80,12 +80,18 @@ const CalendarGrid = ({ currentDate, tasks = [] }) => {
           return (
             <Box
               key={day.toString()}
+              onClick={() => window.onSelectDate && window.onSelectDate(day)}
+              title="Create task on this day"
               sx={{
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 minHeight: '60px',
-                position: 'relative'
+                position: 'relative',
+                cursor: 'pointer',
+                borderRadius: '10px',
+                transition: 'background-color 0.2s ease',
+                '&:hover': { bgcolor: 'rgba(133, 41, 216, 0.05)' }
               }}
             >
               <Typography
@@ -103,7 +109,7 @@ const CalendarGrid = ({ currentDate, tasks = [] }) => {
                   fontSize: '0.9rem',
                   mb: 0.5,
                   boxShadow: isTodayDate ? '0 8px 16px rgba(133, 41, 216, 0.3)' : 'none',
-                  cursor: 'default',
+                  cursor: 'inherit',
                   transition: 'all 0.2s ease'
                 }}
               >
@@ -152,6 +158,7 @@ const CalendarGrid = ({ currentDate, tasks = [] }) => {
                     placement="top"
                   >
                     <Typography
+                      onClick={(e) => e.stopPropagation()}
                       sx={{
                         fontSize: '0.55rem',
                         fontWeight: 700,

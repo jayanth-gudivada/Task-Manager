@@ -12,6 +12,7 @@ const CalendarPage = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null); // Prefill start date when creating from a day cell
   const { tasks, loadingTasks: loading, fetchTasks, refreshAll } = useTasks();
 
   // Fetch tasks on initial load (Context handles first time check)
@@ -19,13 +20,24 @@ const CalendarPage = () => {
     fetchTasks();
   }, [fetchTasks]);
 
-  // Expose edit handler to window so CalendarGrid and UpcomingPanel can trigger it
+  // Expose handlers to window so CalendarGrid and UpcomingPanel can trigger them.
   useEffect(() => {
+    // Edit an existing task (dot / card click).
     window.onEditTask = (task) => {
       setSelectedTask(task);
+      setSelectedDate(null);
       setIsTaskDialogOpen(true);
     };
-    return () => delete window.onEditTask;
+    // Create a new task on a clicked day, with its start date prefilled.
+    window.onSelectDate = (date) => {
+      setSelectedTask(null);
+      setSelectedDate(date);
+      setIsTaskDialogOpen(true);
+    };
+    return () => {
+      delete window.onEditTask;
+      delete window.onSelectDate;
+    };
   }, []);
 
   const handleSaveTask = async (taskData) => {
@@ -90,6 +102,7 @@ const CalendarPage = () => {
               setCurrentDate={setCurrentDate}
               onOpenTaskDialog={() => {
                 setSelectedTask(null);
+                setSelectedDate(null);
                 setIsTaskDialogOpen(true);
               }}
             />
@@ -123,10 +136,12 @@ const CalendarPage = () => {
         onClose={() => {
           setIsTaskDialogOpen(false);
           setSelectedTask(null);
+          setSelectedDate(null);
         }}
         onSave={handleSaveTask}
         onDelete={handleDeleteTask}
         task={selectedTask}
+        initialDate={selectedDate}
       />
     </Box>
   );
