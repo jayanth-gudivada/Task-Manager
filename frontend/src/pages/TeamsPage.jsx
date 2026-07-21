@@ -78,18 +78,14 @@ const TeamsPage = () => {
     setLoading(true);
     setError('');
     try {
-      if (canManage) {
-        // Managers see every team and need the full user list for the picker.
-        const [teamList, userList] = await Promise.all([
-          teamService.listTeams(),
-          teamService.listAvailableUsers(),
-        ]);
-        setTeams(teamList);
-        setUsers(userList);
-      } else {
-        // Plain users see only the teams they belong to (read-only).
-        setTeams(await teamService.listMyTeams());
-      }
+      // Everyone sees the teams they belong to. Managers additionally need the
+      // full user list to populate the member picker.
+      const [teamList, userList] = await Promise.all([
+        teamService.listMyTeams(),
+        canManage ? teamService.listAvailableUsers() : Promise.resolve([]),
+      ]);
+      setTeams(teamList);
+      setUsers(userList);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load teams');
     } finally {

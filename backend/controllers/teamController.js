@@ -91,7 +91,11 @@ exports.createTeam = async (req, res) => {
     const memberIds = await validateMembers(db, req.body.memberIds);
     if (memberIds === null) return res.status(400).json({ message: 'One or more selected users are invalid' });
 
-    const doc = { name, description, memberIds, createdBy: toObjectId(req.userId), createdAt: new Date() };
+    // The creator is always a member, so the team shows up in their own list.
+    const creator = toObjectId(req.userId);
+    if (creator && !memberIds.some((id) => id.equals(creator))) memberIds.push(creator);
+
+    const doc = { name, description, memberIds, createdBy: creator, createdAt: new Date() };
     const result = await db.collection('teams').insertOne(doc);
     const [team] = await populate(db, [{ ...doc, _id: result.insertedId }]);
     res.status(201).json(team);
