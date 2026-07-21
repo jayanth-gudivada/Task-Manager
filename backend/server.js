@@ -8,8 +8,11 @@ const taskRoutes = require('./routes/taskRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
+const teamRoutes = require('./routes/teamRoutes');
+const teamController = require('./controllers/teamController');
 const requireAuth = require('./middleware/requireAuth');
 const requireAdmin = require('./middleware/requireAdmin');
+const requireLeaderOrAdmin = require('./middleware/requireLeaderOrAdmin');
 const runStartup = require('./startup');
 
 const app = express();
@@ -70,6 +73,13 @@ async function run() {
 
     // Admin-only: user management (list users, edit info/role).
     app.use('/api/users', requireAuth, requireAdmin, userRoutes);
+
+    // Any authenticated user can view the teams they belong to (read-only).
+    // Registered before the leader/admin group so it isn't blocked by it.
+    app.get('/api/teams/mine', requireAuth, teamController.listMyTeams);
+
+    // Leader/admin: team management (delete is further gated to admin in routes).
+    app.use('/api/teams', requireAuth, requireLeaderOrAdmin, teamRoutes);
 
     // Basic health API
     app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok', message: 'Backend is running and accessible!' }));

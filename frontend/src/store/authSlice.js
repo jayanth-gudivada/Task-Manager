@@ -90,6 +90,8 @@ export const { logout, clearError } = authSlice.actions;
 export const selectUser = (state) => state.auth.user;
 export const selectIsAuthed = (state) => state.auth.status === 'authenticated';
 export const selectIsAdmin = (state) => state.auth.user?.role === 'admin';
+export const selectCanManageTeams = (state) =>
+  state.auth.user?.role === 'admin' || state.auth.user?.role === 'leader';
 export const selectAuthStatus = (state) => state.auth.status;
 export const selectAuthError = (state) => state.auth.error;
 

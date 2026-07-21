@@ -103,5 +103,34 @@ export const userService = {
   }
 };
 
+// Team management (leader/admin). Delete is admin-only on the backend.
+export const teamService = {
+  listTeams: async () => {
+    const response = await axios.get(`${API_URL}/teams`);
+    return response.data;
+  },
+  // Teams the current user belongs to (read-only; any role).
+  listMyTeams: async () => {
+    const response = await axios.get(`${API_URL}/teams/mine`);
+    return response.data;
+  },
+  listAvailableUsers: async () => {
+    const response = await axios.get(`${API_URL}/teams/users`);
+    return response.data;
+  },
+  createTeam: async (team) => {
+    const response = await axios.post(`${API_URL}/teams`, team);
+    return response.data;
+  },
+  updateTeam: async (id, changes) => {
+    const response = await axios.put(`${API_URL}/teams/${id}`, changes);
+    return response.data;
+  },
+  deleteTeam: async (id) => {
+    const response = await axios.delete(`${API_URL}/teams/${id}`);
+    return response.data;
+  }
+};
+
 // The role values the UI offers; keep in sync with backend roles.js.
 export const ROLES = ['admin', 'leader', 'user'];

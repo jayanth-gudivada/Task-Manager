@@ -189,11 +189,10 @@ const Sidebar = ({ activeView, onViewChange }) => {
           <PeopleAltIcon fontSize="medium" />
         </NavButton>
       )}
-      {isAdmin && (
-        <NavButton title="Teams" active={activeView === 'teams'} onClick={() => onViewChange('teams')}>
-          <GroupsIcon fontSize="medium" />
-        </NavButton>
-      )}
+      {/* Teams: everyone. Managers create/edit; plain users see their own teams read-only. */}
+      <NavButton title="Teams" active={activeView === 'teams'} onClick={() => onViewChange('teams')}>
+        <GroupsIcon fontSize="medium" />
+      </NavButton>
 
       {/* User menu pinned to the bottom. */}
       <Box sx={{ mt: 'auto' }}>
