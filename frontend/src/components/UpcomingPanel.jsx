@@ -13,7 +13,7 @@ import { getTaskColor } from '../utils/TaskColors';
 const priorityRank = (priority) =>
   priority === 'priority' ? 2 : priority === 'important' ? 1 : 0;
 
-const UpcomingPanel = ({ tasks = [], loading }) => {
+const UpcomingPanel = ({ tasks = [], loading, context = 'mine' }) => {
   const today = new Date();
   const startOfToday = startOfDay(today);
 
@@ -263,11 +263,22 @@ const UpcomingPanel = ({ tasks = [], loading }) => {
                     </Box>
 
                     {/* 3. FOOTER (Fixed) */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, mt: 'auto', width: '100%', justifyContent: 'flex-start' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, mt: 'auto', width: '100%' }}>
                       <AccessTimeIcon sx={{ fontSize: 12, color: urgency.color }} />
                       <Typography variant="caption" sx={{ fontWeight: 700, color: urgency.color, fontSize: '0.62rem', textAlign: 'left' }}>
                         {urgency.label}
                       </Typography>
+                      {/* Who the task is for (assigned tab) or who assigned it (my tab). */}
+                      {context === 'assigned' && task.assigneeName && (
+                        <Typography variant="caption" sx={{ ml: 'auto', fontWeight: 700, color: '#64748b', fontSize: '0.6rem' }}>
+                          → {task.assigneeName}
+                        </Typography>
+                      )}
+                      {context === 'mine' && task.assignmentType === 'team' && task.ownerName && (
+                        <Typography variant="caption" sx={{ ml: 'auto', fontWeight: 700, color: '#64748b', fontSize: '0.6rem' }}>
+                          from {task.ownerName}
+                        </Typography>
+                      )}
                     </Box>
 
                   </Box>

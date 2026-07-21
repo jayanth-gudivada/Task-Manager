@@ -16,15 +16,17 @@ export const useTasks = () => {
 
 export const TaskProvider = ({ children }) => {
   const [tasks, setTasks] = useState([]);
+  const [assignedTasks, setAssignedTasks] = useState([]);
   const [stats, setStats] = useState(null);
   const [completedTasks, setCompletedTasks] = useState([]);
   const [totalCompletedCount, setTotalCompletedCount] = useState(0);
   
   const [loadingTasks, setLoadingTasks] = useState(false);
+  const [loadingAssigned, setLoadingAssigned] = useState(false);
   const [loadingStats, setLoadingStats] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   
-  const [initialized, setInitialized] = useState({ tasks: false, stats: false });
+  const [initialized, setInitialized] = useState({ tasks: false, assigned: false, stats: false });
 
   // Fetch active tasks
   const fetchTasks = useCallback(async (force = false) => {
@@ -41,6 +43,22 @@ export const TaskProvider = ({ children }) => {
       setLoadingTasks(false);
     }
   }, [initialized.tasks]);
+
+  // Fetch tasks I created for other people (the "Tasks Assigned" tab).
+  const fetchAssignedTasks = useCallback(async (force = false) => {
+    if (initialized.assigned && !force) return;
+
+    setLoadingAssigned(true);
+    try {
+      const res = await axios.get(`${API_URL}/tasks/assigned`);
+      setAssignedTasks(res.data);
+      setInitialized(prev => ({ ...prev, assigned: true }));
+    } catch (err) {
+      console.error('Error fetching assigned tasks:', err);
+    } finally {
+      setLoadingAssigned(false);
+    }
+  }, [initialized.assigned]);
 
   // Fetch stats for Performance Page
   const fetchStats = useCallback(async (force = false) => {
@@ -78,19 +96,23 @@ export const TaskProvider = ({ children }) => {
   const refreshAll = useCallback(async () => {
     await Promise.all([
       fetchTasks(true),
+      fetchAssignedTasks(true),
       fetchStats(true)
     ]);
-  }, [fetchTasks, fetchStats]);
+  }, [fetchTasks, fetchAssignedTasks, fetchStats]);
 
   const value = {
     tasks,
+    assignedTasks,
     stats,
     completedTasks,
     totalCompletedCount,
     loadingTasks,
+    loadingAssigned,
     loadingStats,
     loadingHistory,
     fetchTasks,
+    fetchAssignedTasks,
     fetchStats,
     fetchCompletedTasks,
     refreshAll

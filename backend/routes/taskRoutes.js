@@ -5,6 +5,7 @@ const taskController = require('../controllers/taskController');
 // Define API routes
 router.post('/', taskController.createTask);
 router.get('/', taskController.getAllTasks);
+router.get('/assigned', taskController.getAssignedTasks);
 router.get('/upcoming', taskController.getUpcomingTasks);
 router.get('/completed', taskController.getCompletedTasks);
 router.get('/stats', taskController.getPerformanceStats);

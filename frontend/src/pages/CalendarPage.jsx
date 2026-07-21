@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Paper, Grid } from '@mui/material';
+import { Box, Paper, Grid, Tabs, Tab } from '@mui/material';
 import CalendarHeader from '../components/CalendarHeader';
 import CalendarGrid from '../components/CalendarGrid';
 import TaskDialog from '../components/TaskDialog';
@@ -13,12 +13,18 @@ const CalendarPage = () => {
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null); // Prefill start date when creating from a day cell
-  const { tasks, loadingTasks: loading, fetchTasks, refreshAll } = useTasks();
+  const [activeTab, setActiveTab] = useState(0); // 0 = My Tasks, 1 = Tasks Assigned
+  const {
+    tasks, loadingTasks: loading, fetchTasks,
+    assignedTasks, loadingAssigned, fetchAssignedTasks,
+    refreshAll,
+  } = useTasks();
 
-  // Fetch tasks on initial load (Context handles first time check)
+  // Fetch both task lists on initial load (Context handles first-time checks).
   useEffect(() => {
     fetchTasks();
-  }, [fetchTasks]);
+    fetchAssignedTasks();
+  }, [fetchTasks, fetchAssignedTasks]);
 
   // Expose handlers to window so CalendarGrid and UpcomingPanel can trigger them.
   useEffect(() => {
@@ -123,10 +129,25 @@ const CalendarPage = () => {
           </Paper>
         </Grid>
  
-        {/* Sidebar Section */}
+        {/* Sidebar Section — tabbed: My Tasks / Tasks Assigned */}
         <Grid size={{ xs: 12, md: 7 }} sx={{ height: { xs: 'auto', md: '100%' }, display: 'flex', minWidth: 0 }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: { xs: '300px', md: 'auto' } }}>
-            <UpcomingPanel tasks={tasks} loading={loading} />
+          <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: 0 }}>
+            <Tabs
+              value={activeTab}
+              onChange={(_, v) => setActiveTab(v)}
+              sx={{
+                px: 1, minHeight: 40,
+                '& .MuiTab-root': { textTransform: 'none', fontWeight: 700, minHeight: 40, fontSize: '0.85rem' },
+              }}
+            >
+              <Tab label="My Tasks" />
+              <Tab label={`Tasks Assigned${assignedTasks.length ? ` (${assignedTasks.length})` : ''}`} />
+            </Tabs>
+            <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex' }}>
+              {activeTab === 0
+                ? <UpcomingPanel tasks={tasks} loading={loading} />
+                : <UpcomingPanel tasks={assignedTasks} loading={loadingAssigned} context="assigned" />}
+            </Box>
           </Box>
         </Grid>
       </Grid>

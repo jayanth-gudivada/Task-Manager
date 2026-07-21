@@ -1,14 +1,66 @@
 const { ObjectId } = require('mongodb');
 
-// Every query in this file is scoped to req.userId (set by requireAuth) so a
-// user can only ever see or touch their own tasks.
+// Every query in this file is scoped to req.userId (set by requireAuth). A task
+// has an owner (creator) and an assignee (who it's for). "My tasks" are tasks
+// assigned to me; "assigned tasks" are ones I created for someone else.
+
+const toObjectId = (id) => {
+  try { return new ObjectId(id); } catch { return null; }
+};
+
+// A task belongs to my "My Tasks" view if I'm the assignee. Legacy tasks created
+// before assignment existed have no assigneeId — treat those as self-owned.
+const myTasksFilter = (userId) => ({
+  status: 1,
+  $or: [
+    { assigneeId: userId },
+    { assigneeId: { $exists: false }, ownerId: userId },
+  ],
+});
+
+// Attach display names for the owner (who assigned it) and assignee (who it's
+// for) in a single lookup, so the UI can label assigned tasks.
+async function populateNames(db, tasks) {
+  const ids = [
+    ...new Set(tasks.flatMap((t) => [t.ownerId, t.assigneeId].filter(Boolean).map(String))),
+  ].map(toObjectId).filter(Boolean);
+
+  const users = ids.length
+    ? await db.collection('users').find({ _id: { $in: ids } }, { projection: { name: 1 } }).toArray()
+    : [];
+  const nameById = new Map(users.map((u) => [u._id.toString(), u.name]));
+
+  return tasks.map((t) => ({
+    ...t,
+    ownerName: t.ownerId ? nameById.get(String(t.ownerId)) || null : null,
+    assigneeName: t.assigneeId ? nameById.get(String(t.assigneeId)) || null : null,
+  }));
+}
 
 // Create a new task
 exports.createTask = async (req, res) => {
   const db = req.app.locals.db;
   try {
+    const assignmentType = req.body.assignmentType === 'team' ? 'team' : 'self';
+    let assigneeId = req.userId; // self-assignment by default
+    let teamId = null;
+
+    if (assignmentType === 'team') {
+      teamId = req.body.teamId;
+      assigneeId = req.body.assigneeId;
+      const team = teamId ? await db.collection('teams').findOne({ _id: toObjectId(teamId) }) : null;
+      if (!team) return res.status(400).json({ message: 'A valid team is required' });
+      const memberIds = (team.memberIds || []).map(String);
+      if (!assigneeId || !memberIds.includes(String(assigneeId))) {
+        return res.status(400).json({ message: 'Assignee must be a member of the selected team' });
+      }
+    }
+
     const task = {
       ownerId: req.userId,
+      assignmentType,
+      teamId,
+      assigneeId,
       title: req.body.title,
       description: req.body.description,
       startDate: req.body.startDate,
@@ -25,17 +77,31 @@ exports.createTask = async (req, res) => {
   }
 };
 
-// Get all tasks
+// Get my tasks (assigned to me)
 exports.getAllTasks = async (req, res) => {
   const db = req.app.locals.db;
   try {
     const tasks = await db.collection('tasks')
-      .find({ ownerId: req.userId, status: 1 })
+      .find(myTasksFilter(req.userId))
       .sort({ startDate: 1 })
       .toArray();
-    res.status(200).json(tasks);
+    res.status(200).json(await populateNames(db, tasks));
   } catch (error) {
     res.status(500).json({ message: 'Error retrieving tasks', error: error.message });
+  }
+};
+
+// Get tasks I created for other people
+exports.getAssignedTasks = async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const tasks = await db.collection('tasks')
+      .find({ status: 1, ownerId: req.userId, assigneeId: { $exists: true, $ne: req.userId } })
+      .sort({ startDate: 1 })
+      .toArray();
+    res.status(200).json(await populateNames(db, tasks));
+  } catch (error) {
+    res.status(500).json({ message: 'Error retrieving assigned tasks', error: error.message });
   }
 };
 
@@ -47,15 +113,11 @@ exports.getUpcomingTasks = async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     const tasks = await db.collection('tasks')
-      .find({
-        ownerId: req.userId,
-        status: 1,
-        endDate: { $gte: today.toISOString() }
-      })
+      .find({ ...myTasksFilter(req.userId), endDate: { $gte: today.toISOString() } })
       .sort({ endDate: 1 })
       .limit(10)
       .toArray();
-    res.status(200).json(tasks);
+    res.status(200).json(await populateNames(db, tasks));
   } catch (error) {
     res.status(500).json({ message: 'Error retrieving upcoming tasks', error: error.message });
   }
@@ -74,8 +136,10 @@ exports.updateTask = async (req, res) => {
       updateFields.completedAt = new Date().toISOString();
     }
 
+    // The owner (creator) or the assignee may update a task — so an assignee can
+    // mark work assigned to them as complete.
     const result = await db.collection('tasks').findOneAndUpdate(
-      { _id: new ObjectId(id), ownerId: req.userId },
+      { _id: new ObjectId(id), $or: [{ ownerId: req.userId }, { assigneeId: req.userId }] },
       { $set: updateFields },
       { returnDocument: 'after' }
     );

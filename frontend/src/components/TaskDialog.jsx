@@ -12,6 +12,7 @@ import {
   MenuItem,
   Select,
   FormControl,
+  FormHelperText,
   InputLabel,
   IconButton,
   Popover
@@ -21,7 +22,10 @@ import ReactDatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { format, isBefore, startOfDay, parseISO } from 'date-fns';
 import { HexColorPicker, HexColorInput } from 'react-colorful';
+import { useSelector } from 'react-redux';
 import { GENERAL_DEFAULT, isColorReserved, getPriorityColor, getImportantColor } from '../utils/TaskColors';
+import { teamService } from '../services/api';
+import { selectUser } from '../store/authSlice';
 
 const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null, viewOnly = false }) => {
   const [taskName, setTaskName] = useState('');
@@ -32,7 +36,19 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
   const [color, setColor] = useState(GENERAL_DEFAULT);
   const [colorError, setColorError] = useState('');
   const [colorAnchor, setColorAnchor] = useState(null);
-  const [error, setError] = useState('');
+  const [errors, setErrors] = useState({}); // per-field validation errors
+
+  // Assignment: 'self' (task is for me) or 'team' (assigned to a team member).
+  const [assignmentType, setAssignmentType] = useState('self');
+  const [teamId, setTeamId] = useState('');
+  const [assigneeId, setAssigneeId] = useState('');
+  const [myTeams, setMyTeams] = useState([]);
+  const me = useSelector(selectUser);
+
+  // Members of the selected team, minus the current user — assigning to
+  // yourself is the "Myself" option, so it's redundant here.
+  const teamMembers = (myTeams.find((t) => t._id === teamId)?.members || [])
+    .filter((m) => String(m._id) !== String(me?._id));
 
   const isEditMode = !!task;
 
@@ -46,6 +62,10 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
       setPriority(task.priority || 'general');
       setColor(task.color || GENERAL_DEFAULT);
       setColorError('');
+      setErrors({});
+      setAssignmentType(task.assignmentType || 'self');
+      setTeamId(task.teamId || '');
+      setAssigneeId(task.assignmentType === 'team' ? (task.assigneeId || '') : '');
     } else {
       resetForm();
       // Creating from a clicked calendar day: prefill the date selection.
@@ -56,6 +76,12 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
     }
   }, [task, open, initialDate]);
 
+  // Load the teams the current user belongs to (for the assignment pickers).
+  useEffect(() => {
+    if (!open) return;
+    teamService.listMyTeams().then(setMyTeams).catch(() => setMyTeams([]));
+  }, [open]);
+
   const resetForm = () => {
     setTaskName('');
     setDescription('');
@@ -64,7 +90,10 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
     setPriority('general');
     setColor(GENERAL_DEFAULT);
     setColorError('');
-    setError('');
+    setErrors({});
+    setAssignmentType('self');
+    setTeamId('');
+    setAssigneeId('');
   };
 
   // Apply a color from the spectrum picker / hex input, guarding against
@@ -77,19 +106,36 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
   };
 
   const handleSave = () => {
-    // Validation
-    if (!taskName.trim()) return setError('Task Name is required');
-    if (startDate && endDate && isBefore(startOfDay(endDate), startOfDay(startDate))) return setError('End Date cannot be before Start Date');
-    if (priority === 'general' && colorError) return setError('Fix the task color before saving');
+    // Validation — every field is mandatory; errors show under each field.
+    const e = {};
+    if (!taskName.trim()) e.title = 'Task Name is required';
+    if (!description.trim()) e.description = 'Description is required';
+    if (!startDate) e.startDate = 'Start Date is required';
+    if (!endDate) e.endDate = 'End Date is required';
+    else if (startDate && isBefore(startOfDay(endDate), startOfDay(startDate))) {
+      e.endDate = 'End Date cannot be before Start Date';
+    }
+    if (priority === 'general' && colorError) e.color = colorError;
+    if (assignmentType === 'team') {
+      if (!teamId) e.team = 'Select a team';
+      if (!assigneeId) e.assignee = 'Select a team member to assign';
+    }
+
+    setErrors(e);
+    if (Object.keys(e).length > 0) return;
 
     const taskData = {
-      title: taskName,
-      description,
-      startDate: startDate?.toISOString() || null,
-      endDate: endDate?.toISOString() || null,
+      title: taskName.trim(),
+      description: description.trim(),
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
       priority,
       // Custom color only applies to general tasks; other tiers use fixed defaults.
       color: priority === 'general' ? color : null,
+      assignmentType,
+      teamId: assignmentType === 'team' ? teamId : null,
+      // Self-assignment lets the backend default the assignee to the creator.
+      ...(assignmentType === 'team' ? { assigneeId } : {}),
       ...(isEditMode ? { _id: task?._id } : {})
     };
 
@@ -136,9 +182,10 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
       </DialogTitle>
 
       <DialogContent sx={{ mt: 0, px: 3, pb: viewOnly ? 4 : 1 }}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1.5 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1.5, '& .MuiFormLabel-asterisk': { color: '#ef4444' } }}>
           <TextField
             label="Task Name"
+            required
             fullWidth
             size="small" // Compressing scale
             value={taskName}
@@ -147,6 +194,8 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
             variant="outlined"
             placeholder="e.g., Weekly Sync"
             autoFocus
+            error={!!errors.title}
+            helperText={errors.title}
             InputLabelProps={{ sx: { fontSize: '0.75rem', fontWeight: 500 } }}
             InputProps={{ sx: { fontSize: '0.8rem' } }}
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
@@ -154,6 +203,7 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
 
           <TextField
             label="Description"
+            required
             fullWidth
             multiline
             rows={2} // Reduced rows
@@ -163,6 +213,8 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
             disabled={viewOnly}
             variant="outlined"
             placeholder="What needs to be done?"
+            error={!!errors.description}
+            helperText={errors.description}
             InputLabelProps={{ sx: { fontSize: '0.75rem', fontWeight: 500 } }}
             InputProps={{ sx: { fontSize: '0.8rem' } }}
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
@@ -171,23 +223,28 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
           <Box sx={{ display: 'flex', gap: 2, flexDirection: 'row' }}>
             <Box sx={{ flex: 1 }}>
               <Typography variant="caption" sx={{ mb: 0.8, display: 'block', fontWeight: 600, color: '#94a3b8', fontSize: '0.6rem', letterSpacing: '0.05em' }}>
-                START DATE
+                START DATE <Box component="span" sx={{ color: '#ef4444' }}>*</Box>
               </Typography>
               <ReactDatePicker
                 selected={startDate}
                 onChange={(date) => setStartDate(date)}
                 dateFormat="dd/MM/yyyy"
                 disabled={viewOnly}
-                customInput={<TextField fullWidth size="small" disabled={viewOnly} sx={{
+                customInput={<TextField fullWidth size="small" disabled={viewOnly} error={!!errors.startDate} sx={{
                   '& .MuiOutlinedInput-root': { borderRadius: '10px', fontSize: '0.8rem' },
                   '& .MuiInputBase-input': { py: 0.8 }
                 }} />}
                 portalId="root-datepicker"
               />
+              {errors.startDate && (
+                <Typography color="error" variant="caption" sx={{ display: 'block', mt: 0.5, fontSize: '0.68rem' }}>
+                  {errors.startDate}
+                </Typography>
+              )}
             </Box>
             <Box sx={{ flex: 1 }}>
               <Typography variant="caption" sx={{ mb: 0.8, display: 'block', fontWeight: 600, color: '#94a3b8', fontSize: '0.6rem', letterSpacing: '0.05em' }}>
-                END DATE
+                END DATE <Box component="span" sx={{ color: '#ef4444' }}>*</Box>
               </Typography>
               <ReactDatePicker
                 selected={endDate}
@@ -195,17 +252,81 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
                 dateFormat="dd/MM/yyyy"
                 minDate={startDate}
                 disabled={viewOnly}
-                customInput={<TextField fullWidth size="small" disabled={viewOnly} sx={{
+                customInput={<TextField fullWidth size="small" disabled={viewOnly} error={!!errors.endDate} sx={{
                   '& .MuiOutlinedInput-root': { borderRadius: '10px', fontSize: '0.8rem' },
                   '& .MuiInputBase-input': { py: 0.8 }
                 }} />}
                 portalId="root-datepicker"
               />
+              {errors.endDate && (
+                <Typography color="error" variant="caption" sx={{ display: 'block', mt: 0.5, fontSize: '0.68rem' }}>
+                  {errors.endDate}
+                </Typography>
+              )}
             </Box>
           </Box>
 
+          {/* Assignment: to myself, or to a member of a team I'm in. */}
+          <FormControl fullWidth size="small" required>
+            <InputLabel sx={{ fontSize: '0.75rem', fontWeight: 500 }}>Assign To</InputLabel>
+            <Select
+              value={assignmentType}
+              label="Assign To"
+              onChange={(e) => {
+                setAssignmentType(e.target.value);
+                if (e.target.value === 'self') { setTeamId(''); setAssigneeId(''); }
+              }}
+              disabled={viewOnly}
+              sx={{ borderRadius: '10px', fontSize: '0.8rem' }}
+            >
+              <MenuItem value="self" sx={{ fontSize: '0.8rem' }}>Myself</MenuItem>
+              <MenuItem value="team" sx={{ fontSize: '0.8rem' }}>Team</MenuItem>
+            </Select>
+          </FormControl>
+
+          {assignmentType === 'team' && (
+            <>
+              <FormControl fullWidth size="small" required error={!!errors.team}>
+                <InputLabel sx={{ fontSize: '0.75rem', fontWeight: 500 }}>Team</InputLabel>
+                <Select
+                  value={teamId}
+                  label="Team"
+                  onChange={(e) => { setTeamId(e.target.value); setAssigneeId(''); }}
+                  disabled={viewOnly}
+                  sx={{ borderRadius: '10px', fontSize: '0.8rem' }}
+                >
+                  {myTeams.length === 0 && (
+                    <MenuItem value="" disabled sx={{ fontSize: '0.8rem' }}>You're not in any team</MenuItem>
+                  )}
+                  {myTeams.map((t) => (
+                    <MenuItem key={t._id} value={t._id} sx={{ fontSize: '0.8rem' }}>{t.name}</MenuItem>
+                  ))}
+                </Select>
+                {errors.team && <FormHelperText>{errors.team}</FormHelperText>}
+              </FormControl>
+
+              <FormControl fullWidth size="small" required disabled={viewOnly || !teamId} error={!!errors.assignee}>
+                <InputLabel sx={{ fontSize: '0.75rem', fontWeight: 500 }}>Assign Member</InputLabel>
+                <Select
+                  value={assigneeId}
+                  label="Assign Member"
+                  onChange={(e) => setAssigneeId(e.target.value)}
+                  sx={{ borderRadius: '10px', fontSize: '0.8rem' }}
+                >
+                  {teamMembers.length === 0 && (
+                    <MenuItem value="" disabled sx={{ fontSize: '0.8rem' }}>No members in this team</MenuItem>
+                  )}
+                  {teamMembers.map((m) => (
+                    <MenuItem key={m._id} value={m._id} sx={{ fontSize: '0.8rem' }}>{m.name}</MenuItem>
+                  ))}
+                </Select>
+                {errors.assignee && <FormHelperText>{errors.assignee}</FormHelperText>}
+              </FormControl>
+            </>
+          )}
+
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', mt: 1 }}>
-            <FormControl fullWidth size="small">
+            <FormControl fullWidth size="small" required>
               <InputLabel sx={{ fontSize: '0.75rem', fontWeight: 500 }}>Priority Level</InputLabel>
               <Select
                 value={priority}
@@ -283,12 +404,6 @@ const TaskDialog = ({ open, onClose, onSave, onDelete, task, initialDate = null,
           {colorError && (
             <Typography color="error" variant="caption" sx={{ mt: -1, fontWeight: 500, fontSize: '0.72rem' }}>
               {colorError}
-            </Typography>
-          )}
-
-          {error && !error.includes('Name') && (
-            <Typography color="error" variant="caption" sx={{ mt: 0, fontWeight: 500, fontSize: '0.75rem' }}>
-              {error}
             </Typography>
           )}
         </Box>

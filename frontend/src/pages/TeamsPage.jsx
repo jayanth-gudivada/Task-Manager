@@ -78,10 +78,10 @@ const TeamsPage = () => {
     setLoading(true);
     setError('');
     try {
-      // Everyone sees the teams they belong to. Managers additionally need the
-      // full user list to populate the member picker.
+      // Admins see every team in the org; leaders/users see only teams they
+      // belong to. Managers additionally need the user list for the picker.
       const [teamList, userList] = await Promise.all([
-        teamService.listMyTeams(),
+        isAdmin ? teamService.listTeams() : teamService.listMyTeams(),
         canManage ? teamService.listAvailableUsers() : Promise.resolve([]),
       ]);
       setTeams(teamList);
@@ -91,7 +91,7 @@ const TeamsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [canManage]);
+  }, [canManage, isAdmin]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -205,7 +205,7 @@ const TeamDialog = ({ mode, team, users, onClose, onSaved }) => {
   return (
     <Dialog open onClose={onClose} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
       <DialogTitle sx={{ fontWeight: 700 }}>{mode === 'create' ? 'Create a new team' : 'Manage team'}</DialogTitle>
-      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, '&.MuiDialogContent-root': { pt: 2.5 } }}>
         {err && <Alert severity="error" sx={{ borderRadius: 2 }}>{err}</Alert>}
         <TextField label="Team name" value={name} onChange={(e) => setName(e.target.value)} size="small" fullWidth autoFocus />
         <TextField label="Description" value={description} onChange={(e) => setDescription(e.target.value)} size="small" fullWidth multiline rows={2} />
