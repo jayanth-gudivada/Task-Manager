@@ -149,7 +149,11 @@ const Sidebar = ({ activeView, onViewChange }) => {
   const dispatch = useDispatch();
   const user = useSelector(selectUser);
   const isAdmin = useSelector(selectIsAdmin);
+  const { myTeams, myTeamsLoaded } = useTasks();
   const [anchor, setAnchor] = useState(null);
+
+  // A plain user who belongs to no team works alone — hide collaboration UI.
+  const isSoloUser = user?.role === 'user' && myTeamsLoaded && myTeams.length === 0;
 
   const initials = (user?.name || '?')
     .split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -189,10 +193,12 @@ const Sidebar = ({ activeView, onViewChange }) => {
           <PeopleAltIcon fontSize="medium" />
         </NavButton>
       )}
-      {/* Teams: everyone. Managers create/edit; plain users see their own teams read-only. */}
-      <NavButton title="Teams" active={activeView === 'teams'} onClick={() => onViewChange('teams')}>
-        <GroupsIcon fontSize="medium" />
-      </NavButton>
+      {/* Teams: managers + team members. A solo plain user has no teams to show. */}
+      {!isSoloUser && (
+        <NavButton title="Teams" active={activeView === 'teams'} onClick={() => onViewChange('teams')}>
+          <GroupsIcon fontSize="medium" />
+        </NavButton>
+      )}
 
       {/* User menu pinned to the bottom. */}
       <Box sx={{ mt: 'auto' }}>

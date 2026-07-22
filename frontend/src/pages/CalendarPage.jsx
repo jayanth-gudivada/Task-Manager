@@ -24,8 +24,12 @@ const CalendarPage = () => {
     tasks, loadingTasks: loading, fetchTasks,
     assignedTasks, loadingAssigned, fetchAssignedTasks,
     approvalPending, waitingApproval, reassignTasks, fetchApprovals,
+    myTeams, myTeamsLoaded,
     refreshAll,
   } = useTasks();
+
+  // Solo plain user (no team): show only their own tasks — no tabs, no workflow.
+  const isSoloUser = me?.role === 'user' && myTeamsLoaded && myTeams.length === 0;
 
   // Fetch all task lists on initial load (Context handles first-time checks).
   useEffect(() => {
@@ -156,37 +160,53 @@ const CalendarPage = () => {
         {/* Sidebar Section — tabbed: My Tasks / Tasks Assigned */}
         <Grid size={{ xs: 12, md: 7 }} sx={{ height: { xs: 'auto', md: '100%' }, display: 'flex', minWidth: 0 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: 0 }}>
-            <Tabs
-              value={activeTab}
-              onChange={(_, v) => setActiveTab(v)}
-              variant="scrollable"
-              scrollButtons="auto"
-              sx={{
-                px: 1, minHeight: 40,
-                '& .MuiTab-root': { textTransform: 'none', fontWeight: 700, minHeight: 40, fontSize: '0.85rem' },
-              }}
-            >
-              <Tab label={`My Tasks${tasks.length ? ` (${tasks.length})` : ''}`} />
-              <Tab label={`Tasks Assigned${assignedTasks.length ? ` (${assignedTasks.length})` : ''}`} />
-              <Tab label={`Approval Pending${approvalPending.length ? ` (${approvalPending.length})` : ''}`} />
-              <Tab label={`Waiting for Approval${waitingApproval.length ? ` (${waitingApproval.length})` : ''}`} />
-              <Tab label={`Reassign Task${reassignTasks.length ? ` (${reassignTasks.length})` : ''}`} />
-            </Tabs>
-            <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex' }}>
-              {activeTab === 0 && <UpcomingPanel tasks={tasks} loading={loading} />}
-              {activeTab === 1 && <UpcomingPanel tasks={assignedTasks} loading={loadingAssigned} context="assigned" />}
-              {activeTab === 2 && (
-                <ApprovalPanel tasks={approvalPending} mode="pending" me={me}
-                  onAccept={handleAccept} onRequestChange={handleRequestChange}
-                  onReject={handleReject} onResubmit={handleResubmit} />
-              )}
-              {activeTab === 3 && (
-                <ApprovalPanel tasks={waitingApproval} mode="waiting" me={me} />
-              )}
-              {activeTab === 4 && (
-                <ReassignPanel tasks={reassignTasks} me={me} onReassign={handleReassign} />
-              )}
-            </Box>
+            {isSoloUser ? (
+              /* Solo user: a single plain "My Tasks" list, no tab strip. */
+              <>
+                <Box sx={{ px: 1, minHeight: 40, display: 'flex', alignItems: 'center' }}>
+                  <Box component="span" sx={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                    {`My Tasks${tasks.length ? ` (${tasks.length})` : ''}`}
+                  </Box>
+                </Box>
+                <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex' }}>
+                  <UpcomingPanel tasks={tasks} loading={loading} />
+                </Box>
+              </>
+            ) : (
+              <>
+                <Tabs
+                  value={activeTab}
+                  onChange={(_, v) => setActiveTab(v)}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  sx={{
+                    px: 1, minHeight: 40,
+                    '& .MuiTab-root': { textTransform: 'none', fontWeight: 700, minHeight: 40, fontSize: '0.85rem' },
+                  }}
+                >
+                  <Tab label={`My Tasks${tasks.length ? ` (${tasks.length})` : ''}`} />
+                  <Tab label={`Tasks Assigned${assignedTasks.length ? ` (${assignedTasks.length})` : ''}`} />
+                  <Tab label={`Approval Pending${approvalPending.length ? ` (${approvalPending.length})` : ''}`} />
+                  <Tab label={`Waiting for Approval${waitingApproval.length ? ` (${waitingApproval.length})` : ''}`} />
+                  <Tab label={`Reassign Task${reassignTasks.length ? ` (${reassignTasks.length})` : ''}`} />
+                </Tabs>
+                <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex' }}>
+                  {activeTab === 0 && <UpcomingPanel tasks={tasks} loading={loading} />}
+                  {activeTab === 1 && <UpcomingPanel tasks={assignedTasks} loading={loadingAssigned} context="assigned" />}
+                  {activeTab === 2 && (
+                    <ApprovalPanel tasks={approvalPending} mode="pending" me={me}
+                      onAccept={handleAccept} onRequestChange={handleRequestChange}
+                      onReject={handleReject} onResubmit={handleResubmit} />
+                  )}
+                  {activeTab === 3 && (
+                    <ApprovalPanel tasks={waitingApproval} mode="waiting" me={me} />
+                  )}
+                  {activeTab === 4 && (
+                    <ReassignPanel tasks={reassignTasks} me={me} onReassign={handleReassign} />
+                  )}
+                </Box>
+              </>
+            )}
           </Box>
         </Grid>
       </Grid>

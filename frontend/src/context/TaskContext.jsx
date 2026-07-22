@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
-import { API_URL, taskService } from '../services/api';
+import { API_URL, taskService, teamService } from '../services/api';
 
 // Tier colors moved to the Redux settingsSlice; this context now owns only
 // task data (active tasks, stats, completed history).
@@ -20,6 +20,10 @@ export const TaskProvider = ({ children }) => {
   const [approvalPending, setApprovalPending] = useState([]);
   const [waitingApproval, setWaitingApproval] = useState([]);
   const [reassignTasks, setReassignTasks] = useState([]);
+  // Teams the current user belongs to — drives the "solo user" UI (a plain
+  // user in no team gets a stripped-down page: no Teams menu, no tab panels).
+  const [myTeams, setMyTeams] = useState([]);
+  const [myTeamsLoaded, setMyTeamsLoaded] = useState(false);
   const [stats, setStats] = useState(null);
   const [completedTasks, setCompletedTasks] = useState([]);
   const [totalCompletedCount, setTotalCompletedCount] = useState(0);
@@ -79,6 +83,22 @@ export const TaskProvider = ({ children }) => {
     }
   }, []);
 
+  // Load the current user's teams once on mount so the whole app can tell a
+  // "solo" user (plain role, no team) apart from a collaborator.
+  const fetchMyTeams = useCallback(async () => {
+    try {
+      const teams = await teamService.listMyTeams();
+      setMyTeams(teams);
+    } catch (err) {
+      console.error('Error fetching my teams:', err);
+      setMyTeams([]);
+    } finally {
+      setMyTeamsLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => { fetchMyTeams(); }, [fetchMyTeams]);
+
   // Fetch stats for Performance Page
   const fetchStats = useCallback(async (force = false) => {
     if (initialized.stats && !force) return;
@@ -127,6 +147,8 @@ export const TaskProvider = ({ children }) => {
     approvalPending,
     waitingApproval,
     reassignTasks,
+    myTeams,
+    myTeamsLoaded,
     stats,
     completedTasks,
     totalCompletedCount,

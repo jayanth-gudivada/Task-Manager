@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Paper, Typography, Button, Snackbar, Alert } from '@mui/material';
+import { Box, Paper, Typography, Button, Snackbar, Alert, Chip } from '@mui/material';
 import { HexColorPicker, HexColorInput } from 'react-colorful';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectTierColors, updateSettings } from '../store/settingsSlice';
@@ -15,11 +15,21 @@ import {
  * Priority and Important task tiers. These feed the dynamic reserved-color
  * guard so general tasks can never mimic them.
  */
-const ColorField = ({ label, hint, value, onChange }) => (
+const ColorField = ({ label, hint, value, onChange, isDefault }) => (
   <Box sx={{ flex: 1, minWidth: 220 }}>
-    <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '0.85rem', mb: 0.25 }}>
-      {label}
-    </Typography>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
+      <Typography sx={{ fontWeight: 700, color: '#1e293b', fontSize: '0.85rem' }}>
+        {label}
+      </Typography>
+      {/* Shown until the user picks and saves a color of their own. */}
+      {isDefault && (
+        <Chip
+          label="System default"
+          size="small"
+          sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700, bgcolor: '#eef2ff', color: '#4f46e5' }}
+        />
+      )}
+    </Box>
     <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', mb: 1.5 }}>
       {hint}
     </Typography>
@@ -118,12 +128,14 @@ const AccountSettingsPage = () => {
             hint="Highest urgency tasks"
             value={priorityColor}
             onChange={setPriorityColor}
+            isDefault={priorityColor.toLowerCase() === DEFAULT_PRIORITY_COLOR.toLowerCase()}
           />
           <ColorField
             label="Important Color"
             hint="Next-most urgent tasks"
             value={importantColor}
             onChange={setImportantColor}
+            isDefault={importantColor.toLowerCase() === DEFAULT_IMPORTANT_COLOR.toLowerCase()}
           />
         </Box>
 
